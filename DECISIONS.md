@@ -296,3 +296,13 @@ none.
   week through Zenodo's documented deposit API (`scripts/zenodo_catalog.py`, tested against a fake server only;
   it must be tried on sandbox.zenodo.org first).
 
+## D22 — JOSS paper draft (2026-09-28)
+
+`paper/paper.md` follows the JOSS requirements checked on 2026-09-28: 750–1750 words (1,212 now; checked by
+`scripts/paper_wordcount.py` in `.github/workflows/paper.yml`), the six required sections (Summary, Statement of
+need, State of the field, Software design, Research impact statement, AI usage disclosure) and `paper.bib` with
+DOIs and full journal names. It cannot be submitted yet: JOSS (scope update of January 2026) desk-rejects
+repositories that have not been public, with development spread over time, for more than six months, so the
+earliest submission is about April 2027, with regular releases in between. The AI usage disclosure and the
+research impact statement must be confirmed and updated by Mehmet before submission.
+

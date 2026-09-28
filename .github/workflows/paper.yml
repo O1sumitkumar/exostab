@@ -1,0 +1,27 @@
+name: Paper draft
+
+on:
+  push:
+    paths: ["paper/**", ".github/workflows/paper.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Word count (JOSS asks for 750-1750 words)
+        run: python3 scripts/paper_wordcount.py --check
+      - name: Build the draft PDF
+        # openjournals-draft-action has no recent tag; pinned to the master commit of 2026-09-23.
+        uses: openjournals/openjournals-draft-action@af22ceb4b8f9eff6b3a13c05747ccc2f573cf2e6
+        with:
+          journal: joss
+          paper-path: paper/paper.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: paper
+          path: paper/paper.pdf
