@@ -12,6 +12,8 @@ All notable changes to this project are documented here. The format follows
   `catalog-data`, a sortable catalog page in the docs, and an optional Zenodo dataset upload.
 - Validation figures in the docs.
 - Streamlit web app (`pip install "exostab[web]"`, `streamlit run streamlit_app.py`).
+- Optional SPOCK indicator (`exostab check --spock`), run in a separate environment built by
+  `scripts/make_spock_env.sh` (report schema 1.2).
 - `exostab check --budget fast|thorough|<seconds>` chooses the run length and number of draws from a measured
   integration speed (report schema 1.1 records `settings.budget_s`).
 

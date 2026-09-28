@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import io
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 import streamlit as st
@@ -24,6 +24,7 @@ from ..data import IncompleteSystemError, load_rows, system_from_rows
 from ..data.archive import ArchiveError, group_by_host
 from ..data.names import SystemNotFoundError, resolve_host
 from ..indicators import Verdict
+from ..indicators.spock import spock_python
 from ..models import System
 from ..plots import megno_figure, orbits_figure
 from ..report import ACKNOWLEDGMENT, group_flags
@@ -82,16 +83,12 @@ def _run(system_json: str, settings_json: str, key: str) -> CheckResult:
     """The analysis, cached by the input hash ``key`` (the JSON arguments are the inputs themselves)."""
     system = System.model_validate_json(system_json)
     s = json.loads(settings_json)
-    base = CheckSettings(seed=s["seed"], inclination_prior=s["prior"], jobs=1, n_samples=300)
+    spock = spock_python() if s.get("spock") else None
+    base = CheckSettings(
+        seed=s["seed"], inclination_prior=s["prior"], jobs=1, n_samples=300, spock_python=spock
+    )
     if s["orbits"] is not None and s["draws"] is not None:
-        settings = CheckSettings(
-            orbits=s["orbits"],
-            draws=s["draws"],
-            seed=s["seed"],
-            inclination_prior=s["prior"],
-            jobs=1,
-            n_samples=300,
-        )
+        settings = replace(base, orbits=s["orbits"], draws=s["draws"])
     else:
         settings, _ = settings_for_budget(system, float(s["budget_s"]), base)
     result = check_system(system, settings, command=f"exostab web app {__version__} (input {key[:12]})")
@@ -161,6 +158,12 @@ def _sidebar(state: AppState, names: list[str]) -> None:
                 "use m sin i as the mass" if p == "none" else "draw inclinations (isotropic)"
             ),
         )
+        if spock_python():
+            state.spock = st.checkbox(
+                "Add SPOCK (machine-learned, 3+ planets)",
+                value=state.spock,
+                help="Uses the SPOCK environment set in EXOSTAB_SPOCK_PYTHON.",
+            )
         if (budget, seed, prior) != (state.budget_s, state.seed, state.prior):
             state.budget_s, state.seed, state.prior = float(budget), int(seed), prior
             state.orbits = state.draws = None
@@ -244,7 +247,7 @@ def _results(result: CheckResult, state: AppState) -> None:
     st.markdown(f"### Overall: **{rep.overall.verdict.value.upper()}**")
     _verdict_badge(rep.overall.verdict, "overall")
     st.write(rep.overall.summary)
-    cols = st.columns(3)
+    cols = st.columns(len(rep.indicators))
     for col, ind in zip(cols, rep.indicators.values(), strict=True):
         with col, st.container(border=True):
             _verdict_badge(ind.verdict, ind.title)
@@ -361,6 +364,7 @@ def main() -> None:
             "budget_s": state.budget_s,
             "orbits": state.orbits,
             "draws": state.draws,
+            "spock": state.spock,
         }
         key = input_hash(modified, settings)
         with st.spinner("Integrating… (cached results appear instantly)"):

@@ -10,6 +10,7 @@ from .indicators import IndicatorResult, Verdict
 from .indicators import amd as amd_indicator
 from .indicators import hill as hill_indicator
 from .indicators import megno as nbody_indicator
+from .indicators import spock as spock_indicator
 from .integrate import RunResult
 from .models import PhaseKind, System
 from .report import Overall, Report, build_report
@@ -29,6 +30,7 @@ class CheckSettings:
     jobs: int | None = None  # worker processes (None: all cores but one)
     n_samples: int = 400  # time-series samples kept for the plots
     budget_s: float | None = None  # wall-clock budget that chose orbits and draws, if any
+    spock_python: str | None = None  # interpreter of a SPOCK environment: adds the optional SPOCK indicator
 
 
 def settings_for_budget(system: System, budget_s: float, base: CheckSettings) -> tuple[CheckSettings, Plan]:
@@ -53,7 +55,7 @@ def overall_verdict(indicators: dict[str, IndicatorResult]) -> Overall:
     * unstable: the direct N-body integration is unstable (close encounters or escapes in the nominal run
       and in at least 95% of the draws);
     * inconclusive: the N-body integration could not be trusted;
-    * stable: every indicator says stable;
+    * stable: every indicator says stable (including SPOCK when it is enabled);
     * marginal: everything else, i.e. whenever the indicators disagree or any of them is marginal.
     """
     nb = indicators["nbody"].verdict
@@ -114,6 +116,8 @@ def check_system(system: System, settings: CheckSettings, *, command: str | None
     random_phases = [p.name for p in system.planets if p.phase.kind is PhaseKind.RANDOM]
     nbody = nbody_indicator.evaluate(runs, ias15, random_phases=random_phases)
     indicators = {"hill": hill, "amd": amd, "nbody": nbody}
+    if settings.spock_python and len(nominal.bodies) >= 3:
+        indicators["spock"] = spock_indicator.evaluate(nominal, draws, settings.spock_python)
     report = build_report(
         system=system,
         settings=settings,

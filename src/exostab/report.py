@@ -31,7 +31,7 @@ from .models import Provenance, System, Value
 from .sampling import E_MAX, SIN_I_MIN, Realization
 from .units import MEARTH_IN_MSUN, format_count, format_years, years_to_days
 
-SCHEMA_VERSION = "1.1"  # 1.1: settings.budget_s
+SCHEMA_VERSION = "1.2"  # 1.1: settings.budget_s; 1.2: settings.spock and the optional "spock" indicator
 
 ACKNOWLEDGMENT = (
     "This research has made use of the NASA Exoplanet Archive, which is operated by the California "
@@ -67,6 +67,7 @@ class SettingsRecord(BaseModel):
     escape_factor: float
     encounter_rule: str
     budget_s: float | None = None  # wall-clock budget that chose orbits and draws (--budget), if any
+    spock: bool = False  # whether the optional SPOCK indicator was requested
 
 
 class SoftwareRecord(BaseModel):
@@ -152,6 +153,8 @@ class _Settings(Protocol):
     def dt_fraction(self) -> float: ...
     @property
     def budget_s(self) -> float | None: ...
+    @property
+    def spock_python(self) -> str | None: ...
 
 
 def _finite(obj: Any) -> Any:
@@ -247,6 +250,7 @@ def build_report(
             escape_factor=100.0,
             encounter_rule="two planets closer than the mean of their Hill radii (REBOUND collision detection, line mode)",
             budget_s=settings.budget_s,
+            spock=settings.spock_python is not None,
         ),
         software=software_record(),
         nominal=NominalRecord(star_mass_msun=nominal.m_star, epoch_jd=epoch_jd, bodies=bodies),

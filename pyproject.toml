@@ -125,5 +125,5 @@ plugins = ["pydantic.mypy"]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["rebound.*", "astroquery.*", "astropy.*", "pyarrow.*", "plotly.*"]
+module = ["rebound.*", "astroquery.*", "astropy.*", "pyarrow.*", "plotly.*", "spock.*", "sklearn.*", "xgboost.*"]
 ignore_missing_imports = true

@@ -105,6 +105,16 @@ Each run is classified as:
 By default each run lasts 10,000 orbits of the innermost planet. That is a short time compared with the age of a
 planetary system, and exostab never claims more than "no instability found within this time".
 
+## Optional indicator 4: SPOCK
+
+With `--spock`, exostab also asks SPOCK (Tamayo et al. 2020), a machine-learned classifier trained on compact
+three-planet systems. It estimates, from a short integration, whether a system of three or more planets survives
+a billion orbits of its innermost planet. Each set of parameters counts as stable if the estimate is at least 0.34,
+the threshold that gave a 10% false-positive rate in the original paper. The estimate is not a calibrated
+probability, and the current model (SPOCK 2.x) has no published threshold, so SPOCK can make the overall verdict
+marginal but never unstable on its own. SPOCK currently needs REBOUND 4, so it runs in a separate Python
+environment (`scripts/make_spock_env.sh`).
+
 ## Step 3: the overall verdict
 
 - **unstable**: the direct integration shows close encounters or escapes for the published values and for almost
@@ -130,6 +140,7 @@ integration shows regular motion. The report explains which indicators disagree 
 - Petit, A. C., Laskar, J. & Boué, G. 2017, A&A 607, A35, doi:10.1051/0004-6361/201731196
 - Petit, A. C., Laskar, J. & Boué, G. 2018, A&A 617, A93, doi:10.1051/0004-6361/201833088
 - Pu, B. & Wu, Y. 2015, ApJ 807, 44, doi:10.1088/0004-637x/807/1/44 (erratum ApJ 819, 170)
+- Tamayo, D., Cranmer, M., Hadden, S., Rein, H., et al. 2020, PNAS 117, 18194, doi:10.1073/pnas.2001258117
 - Rein, H. & Liu, S.-F. 2012, A&A 537, A128, doi:10.1051/0004-6361/201118085
 - Rein, H. & Spiegel, D. S. 2015, MNRAS 446, 1424, doi:10.1093/mnras/stu2164
 - Rein, H. & Tamayo, D. 2015, MNRAS 452, 376, doi:10.1093/mnras/stv1257

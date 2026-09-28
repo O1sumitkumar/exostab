@@ -47,6 +47,7 @@ class AppState:
     prior: str = "none"
     orbits: float | None = None  # exact run length of a finished run (makes a shared link reproducible)
     draws: int | None = None
+    spock: bool = False  # optional SPOCK indicator (only offered when a SPOCK environment is configured)
     run: bool = False
 
 
@@ -197,6 +198,8 @@ def encode_state(state: AppState) -> dict[str, str]:
     if state.orbits is not None and state.draws is not None:
         q["orbits"] = f"{state.orbits:g}"
         q["draws"] = str(state.draws)
+    if state.spock:
+        q["spock"] = "1"
     if state.run:
         q["run"] = "1"
     return q
@@ -239,6 +242,7 @@ def decode_state(params: dict[str, str]) -> AppState:
                 s.orbits = s.draws = None
     except ValueError:
         s.orbits = s.draws = None
+    s.spock = params.get("spock") == "1"
     s.run = params.get("run") == "1"
     return s
 

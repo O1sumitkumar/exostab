@@ -159,6 +159,17 @@ def check(
         bool, typer.Option("--no-ias15", help="Skip the IAS15 check of the nominal run.")
     ] = False,
     no_plots: Annotated[bool, typer.Option("--no-plots", help="Do not write PNG figures.")] = False,
+    spock: Annotated[
+        bool,
+        typer.Option(
+            "--spock",
+            help="Add SPOCK's machine-learned classifier (3+ planets). Needs a separate SPOCK environment: see "
+            "scripts/make_spock_env.sh; its python is taken from --spock-python or EXOSTAB_SPOCK_PYTHON.",
+        ),
+    ] = False,
+    spock_python: Annotated[
+        str | None, typer.Option("--spock-python", help="Python interpreter of the SPOCK environment.")
+    ] = None,
     jobs: JobsOpt = None,
     refresh: RefreshOpt = False,
     offline: OfflineOpt = False,
@@ -174,8 +185,24 @@ def check(
             "[red]--budget chooses --orbits and --draws; give either --budget or those options.[/red]"
         )
         raise typer.Exit(2)
+    python = None
+    if spock or spock_python:
+        from .indicators.spock import spock_python as find_spock
+
+        python = find_spock(spock_python)
+        if python is None:
+            err_console.print(
+                "[red]--spock needs a SPOCK environment: run scripts/make_spock_env.sh and pass its python with "
+                "--spock-python or EXOSTAB_SPOCK_PYTHON.[/red]"
+            )
+            raise typer.Exit(2)
     system = _load(name, from_file, refresh, offline)
+    if python and len(system.planets) < 3:
+        console.print(
+            "[yellow]SPOCK applies to three or more planets; it is skipped for this system.[/yellow]"
+        )
     settings = CheckSettings(
+        spock_python=python,
         orbits=orbits if orbits is not None else 1e4,
         draws=draws if draws is not None else 20,
         seed=seed,
@@ -197,10 +224,16 @@ def check(
         )
         if p.warning:
             console.print(f"[yellow]{p.warning}[/yellow]")
+    from .indicators.spock import SpockUnavailableError
+
     with console.status(
         f"Integrating {system.name}: {settings.draws + 1} runs of {settings.orbits:.3g} orbits…"
     ):
-        result = check_system(system, settings, command=_command())
+        try:
+            result = check_system(system, settings, command=_command())
+        except SpockUnavailableError as exc:
+            err_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1) from exc
     out_dir = out or Path("exostab-results") / slug(system.name)
     out_dir.mkdir(parents=True, exist_ok=True)
     outputs = [write_json(result.report, out_dir / "report.json")]

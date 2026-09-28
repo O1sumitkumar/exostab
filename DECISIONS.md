@@ -306,3 +306,22 @@ repositories that have not been public, with development spread over time, for m
 earliest submission is about April 2027, with regular releases in between. The AI usage disclosure and the
 research impact statement must be confirmed and updated by Mehmet before submission.
 
+## D23 — SPOCK as an optional indicator in a separate environment (2026-09-28, issue #4)
+
+SPOCK 2.1.1 (latest) pins `rebound<5` and crashes with REBOUND 5.2 (it uses `sim.N_real` and `sim.ri_whfast`, and
+sets attributes REBOUND 5 no longer allows); no branch or pull request adds REBOUND 5 support (checked
+2026-09-28). exostab therefore runs SPOCK as a separate program: `scripts/make_spock_env.sh` builds a Python 3.12
+environment with the tested versions (spock 2.1.1, rebound 4.6.0, reboundx 4.6.2, celmech 1.5.8, xgboost 2.1.4,
+scikit-learn 1.5.2, plus pandas and ipython, which SPOCK and celmech import without declaring them), and
+`exostab check --spock` sends the initial conditions of every run to `indicators/spock_worker.py` in that
+environment as JSON. SPOCK is GPL-3.0; it is not imported or distributed by exostab (MIT). On macOS the worker
+restarts itself with `DYLD_LIBRARY_PATH` set to the libomp that scikit-learn bundles, so no Homebrew install is
+needed.
+
+Verdicts: estimate ≥ 0.34 → stable, else unstable, per run; 0.34 is Tamayo et al. (2020)'s threshold for a 10%
+false-positive rate on the resonant hold-out set (the retrained 2.x model has no published threshold). SPOCK can
+make the overall verdict marginal but never unstable by itself; it runs only for three or more planets; the
+report warns outside the training domain (mass ratios 1e-7–1e-4, spacings up to about 30 mutual Hill radii).
+Measured: TRAPPIST-1 estimate 0.706 (20/20 draws above the threshold). The indicator set of v0.1 is unchanged
+unless `--spock` is given; whether to keep, change or drop this design is Mehmet's decision (issue #4).
+

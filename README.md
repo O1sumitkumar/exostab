@@ -17,6 +17,9 @@ fills gaps with explicit, logged rules, and runs three stability indicators:
 3. **Direct N-body integration** with [REBOUND](https://github.com/hannorein/rebound) and the MEGNO chaos indicator,
    repeated over Monte Carlo draws within the published uncertainties and cross-checked with a second integrator.
 
+An optional fourth indicator, the machine-learned SPOCK classifier (Tamayo et al. 2020), runs in a separate
+environment (`--spock`; see [docs/methods.md](docs/methods.md)).
+
 It prints a report card, saves a JSON record of everything that went into the result, and plots the orbits and the
 chaos indicator. When the indicators disagree, it says so instead of picking the most comfortable answer.
 
@@ -181,7 +184,7 @@ of every run is stored in its `report.json`.
 exostab is built on [REBOUND](https://github.com/hannorein/rebound) (Rein & Liu 2012) with WHFast (Rein & Tamayo
 2015), IAS15 (Rein & Spiegel 2015) and its variational equations for MEGNO (Rein & Tamayo 2016), and on astropy,
 astroquery, NumPy and Matplotlib. The AMD criteria are from Laskar & Petit (2017) and Petit, Laskar & Boué (2017,
-2018). SPOCK (Tamayo et al. 2020) is planned as an optional fourth indicator.
+2018). SPOCK (Tamayo et al. 2020; GPL-3.0) is used, when enabled, as a separate program in its own environment.
 
 ## Related work
 

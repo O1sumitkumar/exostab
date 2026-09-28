@@ -674,6 +674,11 @@
           ],
           "default": null,
           "title": "Budget S"
+        },
+        "spock": {
+          "default": false,
+          "title": "Spock",
+          "type": "boolean"
         }
       },
       "required": [
@@ -970,7 +975,7 @@
     "overall",
     "runtime_s"
   ],
-  "title": "exostab report (schema 1.1)",
+  "title": "exostab report (schema 1.2)",
   "type": "object",
-  "$id": "https://github.com/mimitoz62/exostab/schemas/report-1.1.json"
+  "$id": "https://github.com/mimitoz62/exostab/schemas/report-1.2.json"
 }
