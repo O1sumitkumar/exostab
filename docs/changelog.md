@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `exostab check --budget fast|thorough|<seconds>` chooses the run length and number of draws from a measured
+  integration speed (report schema 1.1 records `settings.budget_s`).
+
+### Changed
+
+- The IAS15 check starts first, so long checks finish sooner.
+
 ## [0.1.0] - unreleased
 
 ### Added

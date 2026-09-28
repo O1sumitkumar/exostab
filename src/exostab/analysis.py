@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from .budget import Plan, plan
 from .indicators import IndicatorResult, Verdict
 from .indicators import amd as amd_indicator
 from .indicators import hill as hill_indicator
@@ -27,6 +28,14 @@ class CheckSettings:
     dt_fraction: float = 1 / 30
     jobs: int | None = None  # worker processes (None: all cores but one)
     n_samples: int = 400  # time-series samples kept for the plots
+    budget_s: float | None = None  # wall-clock budget that chose orbits and draws, if any
+
+
+def settings_for_budget(system: System, budget_s: float, base: CheckSettings) -> tuple[CheckSettings, Plan]:
+    """Settings whose run length and number of draws fit a wall-clock budget (see :mod:`exostab.budget`)."""
+    nominal = realizations(system, 0, base.seed, base.inclination_prior)[0]
+    p = plan(nominal, budget_s, jobs=base.jobs, ias15_check=base.ias15_check)
+    return replace(base, orbits=p.orbits, draws=p.draws, budget_s=budget_s), p
 
 
 @dataclass

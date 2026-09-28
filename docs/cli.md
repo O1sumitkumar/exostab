@@ -37,8 +37,9 @@ $ exostab check [OPTIONS] [name]
 **Options**:
 
 * `--from-file <file>`: Read the system from a YAML file instead of the archive.
-* `--orbits <float range>`: N-body run length, in orbits of the innermost planet.  [default: 10000.0; x&gt;=10]
-* `--draws <int range>`: Monte Carlo draws within the published uncertainties.  [default: 20; x&gt;=0]
+* `--orbits <float range>`: N-body run length, in orbits of the innermost planet .  [x&gt;=10]
+* `--draws <int range>`: Monte Carlo draws within the published uncertainties .  [x&gt;=0]
+* `--budget <str>`: Choose --orbits and --draws to fit a wall-clock budget: &#x27;fast&#x27; (about 10 s), &#x27;thorough&#x27; (about 2 min) or a number of seconds.
 * `--seed <int>`: Random seed: the same seed gives the same draws and results.  [default: 0]
 * `--out <path>`: Output folder (default: exostab-results/&lt;system&gt;).
 * `--inclination-prior <none|isotropic>`: For minimum masses: &#x27;none&#x27; uses m sin i as the mass; &#x27;isotropic&#x27; draws the inclination (cos i uniform, sin i &gt;= 0.1) in every draw.  [default: none]

@@ -31,7 +31,7 @@ from .models import Provenance, System, Value
 from .sampling import E_MAX, SIN_I_MIN, Realization
 from .units import MEARTH_IN_MSUN, format_count, format_years, years_to_days
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"  # 1.1: settings.budget_s
 
 ACKNOWLEDGMENT = (
     "This research has made use of the NASA Exoplanet Archive, which is operated by the California "
@@ -66,6 +66,7 @@ class SettingsRecord(BaseModel):
     energy_error_max: float
     escape_factor: float
     encounter_rule: str
+    budget_s: float | None = None  # wall-clock budget that chose orbits and draws (--budget), if any
 
 
 class SoftwareRecord(BaseModel):
@@ -149,6 +150,8 @@ class _Settings(Protocol):
     def ias15_check(self) -> bool: ...
     @property
     def dt_fraction(self) -> float: ...
+    @property
+    def budget_s(self) -> float | None: ...
 
 
 def _finite(obj: Any) -> Any:
@@ -243,6 +246,7 @@ def build_report(
             energy_error_max=ENERGY_ERROR_MAX,
             escape_factor=100.0,
             encounter_rule="separation below the smallest planetary Hill radius",
+            budget_s=settings.budget_s,
         ),
         software=software_record(),
         nominal=NominalRecord(star_mass_msun=nominal.m_star, epoch_jd=epoch_jd, bodies=bodies),
@@ -368,6 +372,7 @@ def render(report: Report, console: Console, *, outputs: list[Path] | None = Non
         + (", checked with IAS15" if s.check_integrator else "")
         + f"; {s.draws} Monte Carlo draws; seed {s.seed}; MEGNO chaotic at <Y> ≥ {s.megno_threshold:g}; "
         f"energy-error limit {s.energy_error_max:.0e}."
+        + (f" Run length and draws chosen for a {s.budget_s:g} s budget." if s.budget_s else "")
     )
     parts: list[Any] = [
         header,

@@ -123,10 +123,26 @@ FileOpt = Annotated[
 def check(
     name: Annotated[str | None, typer.Argument(help='Host or planet name, e.g. "TRAPPIST-1".')] = None,
     from_file: FileOpt = None,
-    orbits: OrbitsOpt = 1e4,
+    orbits: Annotated[
+        float | None,
+        typer.Option(
+            "--orbits", help="N-body run length, in orbits of the innermost planet [default: 10000].", min=10
+        ),
+    ] = None,
     draws: Annotated[
-        int, typer.Option("--draws", help="Monte Carlo draws within the published uncertainties.", min=0)
-    ] = 20,
+        int | None,
+        typer.Option(
+            "--draws", help="Monte Carlo draws within the published uncertainties [default: 20].", min=0
+        ),
+    ] = None,
+    budget: Annotated[
+        str | None,
+        typer.Option(
+            "--budget",
+            help="Choose --orbits and --draws to fit a wall-clock budget: 'fast' (about 10 s), 'thorough' "
+            "(about 2 min) or a number of seconds.",
+        ),
+    ] = None,
     seed: SeedOpt = 0,
     out: Annotated[
         Path | None, typer.Option("--out", help="Output folder (default: exostab-results/<system>).")
@@ -148,20 +164,42 @@ def check(
     offline: OfflineOpt = False,
 ) -> None:
     """Stability report card for one system (archive name or --from-file)."""
-    from .analysis import CheckSettings, check_system
+    from .analysis import CheckSettings, check_system, settings_for_budget
+    from .budget import parse_budget
     from .plots import check_figures
     from .report import render, write_json
 
+    if budget is not None and (orbits is not None or draws is not None):
+        err_console.print(
+            "[red]--budget chooses --orbits and --draws; give either --budget or those options.[/red]"
+        )
+        raise typer.Exit(2)
     system = _load(name, from_file, refresh, offline)
     settings = CheckSettings(
-        orbits=orbits,
-        draws=draws,
+        orbits=orbits if orbits is not None else 1e4,
+        draws=draws if draws is not None else 20,
         seed=seed,
         inclination_prior=inclination_prior.value,
         ias15_check=not no_ias15,
         jobs=jobs,
     )
-    with console.status(f"Integrating {system.name}: {draws + 1} runs of {orbits:.3g} orbits…"):
+    if budget is not None:
+        try:
+            seconds = parse_budget(budget)
+        except ValueError as exc:
+            err_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(2) from exc
+        with console.status(f"Measuring integration speed for a {seconds:g} s budget…"):
+            settings, p = settings_for_budget(system, seconds, settings)
+        console.print(
+            f"[dim]Budget {seconds:g} s: {settings.orbits:,.0f} orbits, {settings.draws} draws "
+            f"(estimated {p.estimated_s:.0f} s).[/dim]"
+        )
+        if p.warning:
+            console.print(f"[yellow]{p.warning}[/yellow]")
+    with console.status(
+        f"Integrating {system.name}: {settings.draws + 1} runs of {settings.orbits:.3g} orbits…"
+    ):
         result = check_system(system, settings, command=_command())
     out_dir = out or Path("exostab-results") / slug(system.name)
     out_dir.mkdir(parents=True, exist_ok=True)

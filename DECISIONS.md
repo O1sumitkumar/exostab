@@ -253,3 +253,15 @@ and cross-checked numerically in the tests. Differences from the brief:
   the archive (account-side action for Mehmet).
 - GJ 876: `pl_orbtper` is the osculating epoch for all four planets (D9).
 - `pl_bmassprov` takes the value "M-R relationship", which is not in the archive's column documentation.
+
+## D19 — Time-budget mode (2026-09-28, issue #3)
+
+`--budget fast|thorough|<seconds>` (10 s, 120 s) measures this system's WHFast and IAS15 speed with short runs
+and picks the most thorough preset (orbits, draws) from (2e3, 8), (5e3, 10), (1e4, 20), (2e4, 30), (5e4, 50),
+(1e5, 100) whose estimated wall time fits. The estimate is overhead (1.5 s) + 1.3 × max(total CPU time /
+workers, longest single run); 1.3 is the slowdown measured with all cores busy on an Apple M4 Pro. Runs never go
+below the cheapest preset (a warning is printed instead). The IAS15 check is now started first because it is
+the longest single job. Measured on TRAPPIST-1: "fast" chose (1e4, 20), estimated 8 s, took 7.8 s; "thorough"
+chose (1e5, 100), estimated 90 s, took 82 s. Because the choice depends on the machine, `report.json` records the
+chosen orbits and draws and the budget; repeating with `--orbits/--draws/--seed` reproduces the run exactly.
+

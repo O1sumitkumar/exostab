@@ -662,6 +662,18 @@
         "encounter_rule": {
           "title": "Encounter Rule",
           "type": "string"
+        },
+        "budget_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budget S"
         }
       },
       "required": [
@@ -958,7 +970,7 @@
     "overall",
     "runtime_s"
   ],
-  "title": "exostab report (schema 1.0)",
+  "title": "exostab report (schema 1.1)",
   "type": "object",
-  "$id": "https://github.com/mimitoz62/exostab/schemas/report-1.0.json"
+  "$id": "https://github.com/mimitoz62/exostab/schemas/report-1.1.json"
 }

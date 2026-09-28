@@ -110,9 +110,11 @@ def integrate_all(
         samples = settings.n_samples if k == 0 else 0
         jobs.append((r, replace(base, megno_seed=megno_seed(seed, k), n_samples=samples)))
     if settings.ias15_check:
-        jobs.append((reals[0], replace(jobs[0][1], integrator="ias15")))
+        # IAS15 is the slowest single run (5-20 times WHFast), so it is started first: the pool then
+        # works through the WHFast runs while it goes on, instead of waiting for it at the end.
+        jobs.insert(0, (reals[0], replace(jobs[0][1], integrator="ias15")))
     results = run_many(jobs, settings.jobs)
-    ias15 = results.pop() if settings.ias15_check else None
+    ias15 = results.pop(0) if settings.ias15_check else None
     return results, ias15
 
 
