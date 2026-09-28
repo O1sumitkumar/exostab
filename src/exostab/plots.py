@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 
 from .indicators.megno import MEGNO_CHAOTIC, classify_run
 from .integrate import RunResult
@@ -68,7 +69,9 @@ def planet_color(k: int) -> str:
     return PLANET_COLORS[k % len(PLANET_COLORS)]
 
 
-def _ellipse(a: float, e: float, pomega: float, n: int = 400) -> tuple[np.ndarray, np.ndarray]:
+def _ellipse(
+    a: float, e: float, pomega: float, n: int = 400
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     f = np.linspace(0, 2 * np.pi, n)
     r = a * (1 - e**2) / (1 + e * np.cos(f))
     return r * np.cos(f + pomega), r * np.sin(f + pomega)

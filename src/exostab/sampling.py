@@ -27,6 +27,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy as np
+import numpy.typing as npt
 
 from .models import MassKind, PhaseKind, Planet, Provenance, System, Value
 from .units import G_SIM, days_to_years, mearth_to_msun
@@ -59,7 +60,7 @@ class Realization:
     bodies: tuple[Body, ...]
     sin_i: float = 1.0  # sin of the system inclination used to scale minimum masses
 
-    def semi_major_axes(self) -> np.ndarray:
+    def semi_major_axes(self) -> npt.NDArray[np.float64]:
         """Jacobi semi-major axes in AU, as REBOUND sets them when a planet is added by its period."""
         out = []
         interior = self.m_star
