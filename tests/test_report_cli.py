@@ -1,0 +1,220 @@
+"""Report JSON and schema, terminal card, plots, and the command-line interface."""
+
+from __future__ import annotations
+
+import csv
+import json
+import math
+from pathlib import Path
+
+import pytest
+from conftest import EXAMPLES, two_planet_system
+from rich.console import Console
+from typer.testing import CliRunner
+
+from exostab import __version__
+from exostab.analysis import CheckSettings, check_system
+from exostab.cli import app, slug
+from exostab.plots import check_figures
+from exostab.report import SCHEMA_VERSION, Report, json_schema, render, write_json
+
+runner = CliRunner()
+FAST = ["--orbits", "300", "--draws", "2", "--jobs", "1"]
+
+
+@pytest.fixture(scope="module")
+def small_result():  # type: ignore[no-untyped-def]
+    return check_system(two_planet_system(err=True), CheckSettings(orbits=300, draws=2, jobs=1, n_samples=10))
+
+
+def test_report_json_roundtrip_and_provenance(small_result, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    path = write_json(small_result.report, tmp_path / "report.json")
+    data = json.loads(path.read_text())
+    assert data["schema_version"] == SCHEMA_VERSION
+    for key in ("seed", "orbits", "draws", "integrator", "dt_yr", "t_end_yr", "energy_error_max", "megno_threshold"):
+        assert key in data["settings"]
+    for key in ("exostab", "rebound", "numpy", "python"):
+        assert data["software"][key]
+    assert data["software"]["exostab"] == __version__
+    assert [p["name"] for p in data["system"]["planets"]] == ["Test b", "Test c"]
+    assert data["nominal"]["bodies"][1]["period_days"] == pytest.approx(250.0)
+    back = Report.model_validate(data)
+    assert back.overall.verdict == small_result.report.overall.verdict
+
+
+def test_non_finite_numbers_become_null(small_result) -> None:  # type: ignore[no-untyped-def]
+    rep = small_result.report.model_copy(deep=True)
+    rep.indicators["amd"].details["pairs"][0]["beta"] = math.inf
+    data = json.loads(rep.to_json())
+    assert data["indicators"]["amd"]["details"]["pairs"][0]["beta"] is None
+
+
+def test_shipped_schema_is_up_to_date() -> None:
+    shipped = Path(__file__).resolve().parents[1] / "src" / "exostab" / "schemas" / "report.schema.json"
+    assert json.loads(shipped.read_text()) == json_schema(), "regenerate with `python -m exostab.report`"
+
+
+def test_render_card(small_result) -> None:  # type: ignore[no-untyped-def]
+    console = Console(record=True, width=100)
+    render(small_result.report, console, outputs=[Path("x/report.json")])
+    text = console.export_text()
+    for s in ("Hill spacing", "AMD", "N-body + MEGNO", "Overall:", "Saved: x/report.json"):
+        assert s in text
+
+
+def test_flags_are_grouped_in_the_card() -> None:
+    from exostab.data import load_system
+    from exostab.report import group_flags
+
+    res = check_system(load_system("TRAPPIST-1"), CheckSettings(orbits=50, draws=0, jobs=1, ias15_check=False))
+    groups = group_flags(res.report)
+    transit = [who for who, msg in groups if "transit mid-time" in msg]
+    assert transit == ["b, c, d, e, f, g, h"]
+    console = Console(record=True, width=120)
+    render(res.report, console)
+    assert "Data completion" in console.export_text()
+
+
+def test_figures(small_result, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    paths = check_figures(small_result, tmp_path)
+    assert [p.name for p in paths] == ["orbits.png", "megno.png"]
+    assert all(p.stat().st_size > 10_000 for p in paths)
+
+
+# ------------------------------------------------------------------------------------------ CLI
+
+
+def test_version_and_help() -> None:
+    r = runner.invoke(app, ["--version"])
+    assert r.exit_code == 0 and __version__ in r.output
+    r = runner.invoke(app, ["--help"])
+    assert r.exit_code == 0 and "check" in r.output and "catalog" in r.output
+
+
+def test_check_from_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    out = tmp_path / "out"
+    args = ["check", "--from-file", str(EXAMPLES / "two_planet.yaml"), *FAST, "--out", str(out)]
+    monkeypatch.setattr("sys.argv", ["exostab", *args])
+    r = runner.invoke(app, args)
+    assert r.exit_code == 0, r.output
+    assert {p.name for p in out.iterdir()} == {"report.json", "orbits.png", "megno.png"}
+    data = json.loads((out / "report.json").read_text())
+    assert data["data"]["source"] == "file" and data["settings"]["seed"] == 0
+    assert "--from-file" in data["command"]
+
+
+def test_check_by_name_offline(tmp_path: Path) -> None:
+    out = tmp_path / "hd"
+    r = runner.invoke(
+        app, ["check", "HD 127195", *FAST, "--seed", "7", "--no-plots", "--no-ias15", "--out", str(out)]
+    )
+    assert r.exit_code == 0, r.output
+    data = json.loads((out / "report.json").read_text())
+    assert data["data"]["archive_rows"] == ["HD 127195 b", "HD 127195 c"]
+    assert data["data"]["table"] == "pscomppars" and data["data"]["acknowledgment"]
+    assert data["settings"]["seed"] == 7 and data["settings"]["check_integrator"] is None
+    assert not (out / "orbits.png").exists()
+
+
+def test_check_inclination_prior(tmp_path: Path) -> None:
+    r = runner.invoke(
+        app,
+        ["check", "HD 127195", *FAST, "--no-plots", "--inclination-prior", "isotropic", "--out", str(tmp_path)],
+    )
+    assert r.exit_code == 0, r.output
+    assert json.loads((tmp_path / "report.json").read_text())["settings"]["inclination_prior"] == "isotropic"
+
+
+def test_default_output_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    r = runner.invoke(app, ["check", "Kepler-36", *FAST, "--no-plots"])
+    assert r.exit_code == 0, r.output
+    assert (tmp_path / "exostab-results" / "kepler-36" / "report.json").exists()
+    assert slug("HD 127195") == "hd-127195" and slug("!!") == "system"
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["check"], "either a system name or --from-file"),
+        (["check", "TRAPIST-1"], "Did you mean"),
+        (["check", "Kepler-47"], "circumbinary"),
+    ],
+)
+def test_check_errors(args: list[str], message: str) -> None:
+    r = runner.invoke(app, args)
+    assert r.exit_code != 0
+    assert message in r.output
+
+
+def test_list_command() -> None:
+    r = runner.invoke(app, ["list", "--min-planets", "4", "--max-period-days", "200"])
+    assert r.exit_code == 0, r.output
+    assert "TRAPPIST-1" in r.output and "HD 127195" not in r.output
+    r = runner.invoke(app, ["list", "--limit", "2"])
+    assert r.exit_code == 0 and "more; use --limit 0" in r.output
+
+
+def test_sweep_command(tmp_path: Path) -> None:
+    r = runner.invoke(
+        app,
+        ["sweep", "--from-file", str(EXAMPLES / "hd127195_note.yaml"), "--planet", "b", "--param", "e",
+         "--range", "0", "0.6", "--steps", "4", "--orbits", "200", "--jobs", "1", "--out", str(tmp_path)],
+    )
+    assert r.exit_code == 0, r.output
+    rows = list(csv.DictReader((tmp_path / "sweep.csv").open()))
+    assert [float(x["value"]) for x in rows] == pytest.approx([0.0, 0.2, 0.4, 0.6])
+    assert rows[-1]["hill_verdict"] == "unstable" and rows[0]["amd_verdict"] == "stable"
+    assert (tmp_path / "sweep.png").exists() and (tmp_path / "sweep.json").exists()
+    r = runner.invoke(app, ["sweep", "HD 127195", "--planet", "z", "--steps", "2"])
+    assert r.exit_code == 1 and "no planet" in r.output
+
+
+@pytest.mark.parametrize(("param", "rng"), [("mass", ("100", "300")), ("period", ("500", "520")), ("omega", ("0", "90"))])
+def test_sweep_other_parameters(tmp_path: Path, param: str, rng: tuple[str, str]) -> None:
+    r = runner.invoke(
+        app,
+        ["sweep", "HD 127195", "--planet", "c", "--param", param, "--range", *rng, "--steps", "2",
+         "--orbits", "100", "--jobs", "1", "--out", str(tmp_path)],
+    )
+    assert r.exit_code == 0, r.output
+
+
+def test_sweep_rejects_invalid_values() -> None:
+    from exostab.sweep import _modified
+    from exostab.sampling import realizations
+
+    nom = realizations(two_planet_system(), 0, seed=0)[0]
+    for param, value in (("e", 1.2), ("mass", -1.0), ("period", 0.0), ("bogus", 1.0)):
+        with pytest.raises(ValueError):
+            _modified(nom, 0, param, value)
+
+
+def test_catalog_build(tmp_path: Path) -> None:
+    r = runner.invoke(
+        app,
+        ["catalog", "build", "--limit", "3", "--orbits", "100", "--draws", "1", "--jobs", "2", "--out", str(tmp_path)],
+    )
+    assert r.exit_code == 0, r.output
+    rows = list(csv.DictReader((tmp_path / "catalog.csv").open()))
+    assert len(rows) == 3
+    assert {row["status"] for row in rows} <= {"ok", "skipped"}
+    ok = [row for row in rows if row["status"] == "ok"]
+    assert ok and all(row["overall"] in ("stable", "marginal", "unstable", "inconclusive") for row in ok)
+    assert (tmp_path / "catalog.parquet").exists()
+    meta = json.loads((tmp_path / "catalog_meta.json").read_text())
+    assert meta["n_systems"] == 3 and meta["settings"]["draws"] == 1
+
+
+def test_catalog_timeout_and_skip(tmp_path: Path) -> None:
+    from exostab.catalog.build import CatalogSettings, build_catalog
+
+    paths, rows = build_catalog(CatalogSettings(orbits=1e6, draws=0, max_seconds=1, jobs=1), tmp_path, limit=1)
+    assert rows[0]["status"] == "timeout" and rows[0]["overall"] is None
+    from exostab.catalog.build import check_one
+    from exostab.data import load_rows
+    from exostab.data.archive import group_by_host
+
+    rows_, info = load_rows()
+    skipped = check_one(group_by_host(rows_)["Kepler-47"], info, CatalogSettings())
+    assert skipped["status"] == "skipped" and "circumbinary" in skipped["reason"]

@@ -1,0 +1,326 @@
+"""Command-line interface: ``exostab check | sweep | list | catalog build``."""
+
+from __future__ import annotations
+
+import re
+import shlex
+import sys
+import time
+from enum import Enum
+from pathlib import Path
+from typing import Annotated
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from . import __version__
+from .models import System
+
+app = typer.Typer(
+    name="exostab",
+    help="Is this planetary system dynamically stable? Hill spacing, AMD and N-body/MEGNO indicators for "
+    "known exoplanet systems, with every assumption shown.",
+    no_args_is_help=True,
+    add_completion=False,
+    rich_markup_mode="rich",
+)
+catalog_app = typer.Typer(help="Batch stability catalog of archive systems.", no_args_is_help=True)
+app.add_typer(catalog_app, name="catalog")
+
+console = Console()
+err_console = Console(stderr=True)
+
+
+class Prior(str, Enum):
+    none = "none"
+    isotropic = "isotropic"
+
+
+class SweepParam(str, Enum):
+    e = "e"
+    mass = "mass"
+    period = "period"
+    omega = "omega"
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"exostab {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version", callback=_version_callback, is_eager=True, help="Show the version and exit."
+        ),
+    ] = False,
+) -> None:
+    """exostab command-line interface."""
+
+
+def slug(name: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]+", "-", name).strip("-").lower() or "system"
+
+
+def _load(name: str | None, from_file: Path | None, refresh: bool, offline: bool) -> System:
+    from .data import (
+        IncompleteSystemError,
+        SystemFileError,
+        SystemNotFoundError,
+        load_system,
+        load_system_file,
+    )
+    from .data.archive import ArchiveError
+
+    if (name is None) == (from_file is None):
+        err_console.print("[red]Give either a system name or --from-file (not both).[/red]")
+        raise typer.Exit(2)
+    try:
+        if from_file is not None:
+            return load_system_file(from_file)
+        assert name is not None
+        return load_system(name, refresh=refresh, offline=offline)
+    except (SystemNotFoundError, IncompleteSystemError, SystemFileError, ArchiveError) as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+
+def _command() -> str:
+    return "exostab " + " ".join(shlex.quote(a) for a in sys.argv[1:])
+
+
+OrbitsOpt = Annotated[
+    float, typer.Option("--orbits", help="N-body run length, in orbits of the innermost planet.", min=10)
+]
+SeedOpt = Annotated[
+    int, typer.Option("--seed", help="Random seed: the same seed gives the same draws and results.")
+]
+JobsOpt = Annotated[
+    int | None, typer.Option("--jobs", "-j", help="Worker processes (default: all cores but one).", min=1)
+]
+RefreshOpt = Annotated[
+    bool, typer.Option("--refresh", help="Query the archive again instead of using the disk cache.")
+]
+OfflineOpt = Annotated[
+    bool, typer.Option("--offline", help="Use only the bundled offline snapshot (about 20 systems).")
+]
+FileOpt = Annotated[
+    Path | None,
+    typer.Option(
+        "--from-file",
+        help="Read the system from a YAML file instead of the archive.",
+        exists=True,
+        dir_okay=False,
+    ),
+]
+
+
+@app.command()
+def check(
+    name: Annotated[str | None, typer.Argument(help='Host or planet name, e.g. "TRAPPIST-1".')] = None,
+    from_file: FileOpt = None,
+    orbits: OrbitsOpt = 1e4,
+    draws: Annotated[
+        int, typer.Option("--draws", help="Monte Carlo draws within the published uncertainties.", min=0)
+    ] = 20,
+    seed: SeedOpt = 0,
+    out: Annotated[
+        Path | None, typer.Option("--out", help="Output folder (default: exostab-results/<system>).")
+    ] = None,
+    inclination_prior: Annotated[
+        Prior,
+        typer.Option(
+            "--inclination-prior",
+            help="For minimum masses: 'none' uses m sin i as the mass; "
+            "'isotropic' draws the inclination (cos i uniform, sin i >= 0.1) in every draw.",
+        ),
+    ] = Prior.none,
+    no_ias15: Annotated[
+        bool, typer.Option("--no-ias15", help="Skip the IAS15 check of the nominal run.")
+    ] = False,
+    no_plots: Annotated[bool, typer.Option("--no-plots", help="Do not write PNG figures.")] = False,
+    jobs: JobsOpt = None,
+    refresh: RefreshOpt = False,
+    offline: OfflineOpt = False,
+) -> None:
+    """Stability report card for one system (archive name or --from-file)."""
+    from .analysis import CheckSettings, check_system
+    from .plots import check_figures
+    from .report import render, write_json
+
+    system = _load(name, from_file, refresh, offline)
+    settings = CheckSettings(
+        orbits=orbits,
+        draws=draws,
+        seed=seed,
+        inclination_prior=inclination_prior.value,
+        ias15_check=not no_ias15,
+        jobs=jobs,
+    )
+    with console.status(f"Integrating {system.name}: {draws + 1} runs of {orbits:.3g} orbits…"):
+        result = check_system(system, settings, command=_command())
+    out_dir = out or Path("exostab-results") / slug(system.name)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outputs = [write_json(result.report, out_dir / "report.json")]
+    if not no_plots:
+        outputs += check_figures(result, out_dir)
+    render(result.report, console, outputs=outputs)
+    console.print(f"[dim]Finished in {result.report.runtime_s:.1f} s.[/dim]")
+
+
+@app.command()
+def sweep(
+    name: Annotated[str | None, typer.Argument(help="Host or planet name.")] = None,
+    planet: Annotated[str, typer.Option("--planet", help="Planet letter or full name, e.g. 'b'.")] = "b",
+    param: Annotated[
+        SweepParam,
+        typer.Option("--param", help="e (eccentricity), mass (Earth masses), period (days) or omega (deg)."),
+    ] = SweepParam.e,
+    value_range: Annotated[tuple[float, float], typer.Option("--range", help="Start and end values.")] = (
+        0.0,
+        0.5,
+    ),
+    steps: Annotated[int, typer.Option("--steps", help="Number of values.", min=2)] = 25,
+    from_file: FileOpt = None,
+    orbits: OrbitsOpt = 1e4,
+    seed: SeedOpt = 0,
+    out: Annotated[
+        Path | None, typer.Option("--out", help="Output folder (default: exostab-results/<system>).")
+    ] = None,
+    jobs: JobsOpt = None,
+    refresh: RefreshOpt = False,
+    offline: OfflineOpt = False,
+) -> None:
+    """Vary one parameter of one planet and record every indicator (nominal parameters otherwise)."""
+    from .sweep import run_sweep, write_sweep
+
+    system = _load(name, from_file, refresh, offline)
+    try:
+        system.planet(planet)
+    except KeyError as exc:
+        err_console.print(f"[red]{exc.args[0]}[/red]")
+        raise typer.Exit(1) from exc
+    with console.status(f"Sweeping {param.value} of {planet} over {steps} values…"):
+        rows = run_sweep(system, planet, param.value, value_range, steps, orbits=orbits, seed=seed, jobs=jobs)
+    out_dir = out or Path("exostab-results") / slug(system.name)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = write_sweep(rows, system, planet, param.value, out_dir)
+    t = Table(title=f"{system.name}: sweep of {param.value} for planet {planet}", header_style="bold")
+    for col in ("value", "N-body", "<Y>", "Hill", "AMD"):
+        t.add_column(col)
+    for r in rows:
+        t.add_row(
+            f"{r['value']:.4g}",
+            r["nbody_class"],
+            f"{r['megno']:.3g}" if r["megno"] is not None else "—",
+            r["hill_verdict"],
+            r["amd_verdict"],
+        )
+    console.print(t)
+    console.print(f"[dim]Saved: {', '.join(str(p) for p in paths)}[/dim]")
+
+
+@app.command("list")
+def list_cmd(
+    min_planets: Annotated[int, typer.Option("--min-planets", help="Minimum number of planets.", min=2)] = 2,
+    max_period_days: Annotated[
+        float | None,
+        typer.Option(
+            "--max-period-days", help="Only systems whose planets all have periods below this (days)."
+        ),
+    ] = None,
+    limit: Annotated[
+        int, typer.Option("--limit", help="Show at most this many systems (0: all).", min=0)
+    ] = 0,
+    refresh: RefreshOpt = False,
+    offline: OfflineOpt = False,
+) -> None:
+    """List multi-planet systems in the archive table."""
+    from .data import list_systems, load_rows
+    from .data.archive import ArchiveError
+
+    try:
+        rows, info = load_rows(refresh=refresh, offline=offline)
+    except ArchiveError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    systems = list_systems(rows, min_planets=min_planets, max_period_days=max_period_days)
+    shown = systems[:limit] if limit else systems
+    t = Table(
+        header_style="bold",
+        title=f"{len(systems)} systems (data: {info.kind}, {(info.retrieved_utc or '')[:10]})",
+    )
+    for col, just in (
+        ("System", "left"),
+        ("Planets", "right"),
+        ("Periods (d)", "right"),
+        ("M* (M☉)", "right"),
+        ("m sin i", "right"),
+        ("est. mass", "right"),
+        ("no e", "right"),
+        ("Discovery", "left"),
+    ):
+        t.add_column(col, justify=just, no_wrap=col in ("System", "Periods (d)"))  # type: ignore[arg-type]
+    for s in shown:
+        periods = f"{s.min_period_days:.4g}–{s.max_period_days:.4g}" if s.min_period_days is not None else "—"
+        t.add_row(
+            s.host,
+            str(s.n_planets),
+            periods,
+            f"{s.star_mass_msun:.3g}" if s.star_mass_msun else "—",
+            str(s.minimum_masses),
+            str(s.estimated_masses),
+            str(s.missing_eccentricities),
+            s.discovery_methods,
+        )
+    console.print(t)
+    if info.note:
+        console.print(f"[yellow]{info.note}[/yellow]")
+    if limit and len(systems) > limit:
+        console.print(f"[dim]… {len(systems) - limit} more; use --limit 0 to show all.[/dim]")
+
+
+@catalog_app.command("build")
+def catalog_build(
+    limit: Annotated[
+        int, typer.Option("--limit", help="Process at most this many systems (0: all).", min=0)
+    ] = 0,
+    out: Annotated[Path, typer.Option("--out", help="Output folder.")] = Path("catalog"),
+    orbits: OrbitsOpt = 1e4,
+    draws: Annotated[int, typer.Option("--draws", help="Monte Carlo draws per system.", min=0)] = 10,
+    seed: SeedOpt = 0,
+    max_seconds: Annotated[
+        float,
+        typer.Option(
+            "--max-seconds",
+            help="Wall-clock cap per system; systems that exceed it are recorded as 'timeout'.",
+            min=1,
+        ),
+    ] = 120.0,
+    jobs: JobsOpt = None,
+    refresh: RefreshOpt = False,
+    offline: OfflineOpt = False,
+) -> None:
+    """Compute indicators for every multi-planet system and write catalog.csv (+ catalog.parquet)."""
+    from .catalog.build import CatalogSettings, build_catalog
+
+    settings = CatalogSettings(orbits=orbits, draws=draws, seed=seed, max_seconds=max_seconds, jobs=jobs)
+    t0 = time.perf_counter()
+    paths, rows = build_catalog(settings, out, limit=limit, refresh=refresh, offline=offline, console=console)
+    counts: dict[str, int] = {}
+    for r in rows:
+        key = str(r["overall"] or r["status"])
+        counts[key] = counts.get(key, 0) + 1
+    console.print(
+        f"{len(rows)} systems in {time.perf_counter() - t0:.0f} s: "
+        + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+    )
+    console.print(f"[dim]Saved: {', '.join(str(p) for p in paths)}[/dim]")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    app()
