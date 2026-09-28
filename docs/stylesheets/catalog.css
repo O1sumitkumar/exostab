@@ -1,0 +1,18 @@
+/* Catalog table: verdicts are written out in words; the colour only reinforces them. */
+.catalog-wrap { overflow-x: auto; }
+#catalog-table { font-size: 0.72rem; }
+#catalog-table th { cursor: pointer; white-space: nowrap; }
+#catalog-table th[aria-sort="ascending"]::after { content: " ▲"; }
+#catalog-table th[aria-sort="descending"]::after { content: " ▼"; }
+#catalog-table td { white-space: nowrap; }
+#catalog-filter { margin: 0.5rem 0; padding: 0.3rem 0.5rem; width: 16rem; max-width: 100%;
+  border: 1px solid var(--md-default-fg-color--lighter); border-radius: 4px;
+  background: var(--md-default-bg-color); color: var(--md-default-fg-color); }
+.verdict-stable { color: #0b7a0b; font-weight: 600; }
+.verdict-marginal { color: #9a6b00; font-weight: 600; }
+.verdict-unstable { color: #c02a2a; font-weight: 600; }
+.verdict-inconclusive { color: #6b6b6b; font-weight: 600; }
+[data-md-color-scheme="slate"] .verdict-stable { color: #4ade80; }
+[data-md-color-scheme="slate"] .verdict-marginal { color: #facc15; }
+[data-md-color-scheme="slate"] .verdict-unstable { color: #f87171; }
+[data-md-color-scheme="slate"] .verdict-inconclusive { color: #a1a1aa; }

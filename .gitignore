@@ -32,3 +32,6 @@ site/
 exostab-results/
 /catalog/
 /results/
+
+# Local tool settings
+.claude/

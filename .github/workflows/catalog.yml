@@ -1,0 +1,72 @@
+name: Weekly catalog
+
+# Recomputes the stability indicators of every multi-planet system in the NASA Exoplanet Archive and publishes
+# catalog.csv, catalog.parquet and catalog_meta.json on the GitHub release "catalog" (updated in place, so it
+# does not create a new release, and therefore no new Zenodo software version, every week). A dated copy of
+# each file is kept on the same release. Each system is capped at MAX_SECONDS of wall time; systems over the
+# cap are recorded as "timeout" (docs/catalog.md explains the columns).
+
+on:
+  schedule:
+    - cron: "23 4 * * 1"  # Mondays 04:23 UTC
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Only the first N systems (0 = all)"
+        default: "0"
+
+permissions:
+  contents: write  # upload release assets
+  actions: write   # start the docs workflow afterwards
+
+env:
+  MAX_SECONDS: "300"
+  DRAWS: "10"
+  ORBITS: "10000"
+  SEED: "0"
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[catalog]"
+      - name: Build the catalog
+        env:
+          MPLBACKEND: Agg
+        run: |
+          exostab catalog build --refresh --out catalog \
+            --orbits "$ORBITS" --draws "$DRAWS" --seed "$SEED" --max-seconds "$MAX_SECONDS" \
+            --limit "${{ inputs.limit || '0' }}" | tail -n 5
+      - name: Publish on the release "catalog"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          day=$(date -u +%Y-%m-%d)
+          for f in catalog.csv catalog.parquet catalog_meta.json; do cp "catalog/$f" "catalog/${f%.*}-$day.${f##*.}"; done
+          python scripts/catalog_release_notes.py catalog > notes.md
+          if ! gh release view catalog >/dev/null 2>&1; then
+            gh release create catalog --prerelease --title "Stability catalog (updated weekly)" --notes-file notes.md --target "$GITHUB_SHA"
+          fi
+          gh release edit catalog --notes-file notes.md
+          gh release upload catalog catalog/* --clobber
+      - uses: actions/upload-artifact@v7
+        with:
+          name: catalog
+          path: catalog/
+      - name: Upload a new version to Zenodo (only if configured)
+        if: ${{ vars.ZENODO_CATALOG_RECORD != '' }}
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          ZENODO_CATALOG_RECORD: ${{ vars.ZENODO_CATALOG_RECORD }}
+          ZENODO_URL: ${{ vars.ZENODO_URL || 'https://zenodo.org' }}
+        run: python scripts/zenodo_catalog.py catalog
+      - name: Rebuild the documentation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docs.yml --ref main

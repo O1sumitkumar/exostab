@@ -18,6 +18,15 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -e ".[dev]"
+      - name: Catalog page from the latest weekly catalog (placeholder if none yet)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release download catalog --pattern catalog.csv --pattern catalog_meta.json --dir catalog-latest; then
+            python scripts/catalog_page.py catalog-latest
+          else
+            python scripts/catalog_page.py
+          fi
       - run: mkdocs build --strict
       - uses: actions/upload-pages-artifact@v5
         with:

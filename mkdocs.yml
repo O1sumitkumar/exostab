@@ -24,11 +24,18 @@ nav:
   - Methods: methods.md
   - Data and assumptions: data-assumptions.md
   - Validation: validation.md
+  - Catalog: catalog.md
   - FAQ: faq.md
   - Changelog: changelog.md
 
+extra_javascript:
+  - javascripts/catalog.js
+extra_css:
+  - stylesheets/catalog.css
+
 markdown_extensions:
   - admonition
+  - md_in_html
   - tables
   - toc: {permalink: true}
   - pymdownx.superfences:

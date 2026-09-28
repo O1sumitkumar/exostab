@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import IO, TYPE_CHECKING, Any, TypeVar, cast
 
 import matplotlib
 
@@ -25,6 +25,8 @@ from .units import format_years
 
 if TYPE_CHECKING:
     from .analysis import CheckResult
+
+Target = TypeVar("Target", Path, IO[bytes])  # a file path, or an open binary stream (web downloads)
 
 PLANET_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
 STATUS = {
@@ -72,7 +74,7 @@ def _ellipse(a: float, e: float, pomega: float, n: int = 400) -> tuple[np.ndarra
     return r * np.cos(f + pomega), r * np.sin(f + pomega)
 
 
-def orbits_figure(nominal: Realization, run: RunResult, title: str, path: Path) -> Path:
+def orbits_figure(nominal: Realization, run: RunResult, title: str, path: Target) -> Target:
     """Top-down view: initial orbits (lines) and positions sampled during the nominal run (dots)."""
     a = nominal.semi_major_axes()
     with plt.rc_context(cast(Any, _RC)):
@@ -109,12 +111,12 @@ def orbits_figure(nominal: Realization, run: RunResult, title: str, path: Path) 
             loc="left",
         )
         ax.legend(loc="upper right", fontsize=8, ncol=1 if len(nominal.bodies) <= 4 else 2)
-        fig.savefig(path)
+        fig.savefig(path, format="png")
         plt.close(fig)
     return path
 
 
-def megno_figure(runs: Sequence[RunResult], ias15: RunResult | None, title: str, path: Path) -> Path:
+def megno_figure(runs: Sequence[RunResult], ias15: RunResult | None, title: str, path: Target) -> Target:
     """MEGNO and energy error of the nominal run over time, and the final <Y> of every run."""
     nominal = runs[0]
     with plt.rc_context(cast(Any, _RC)):
@@ -203,7 +205,7 @@ def megno_figure(runs: Sequence[RunResult], ias15: RunResult | None, title: str,
                 transform=ax_d.transAxes,
                 color=MUTED,
             )
-        fig.savefig(path)
+        fig.savefig(path, format="png")
         plt.close(fig)
     return path
 
