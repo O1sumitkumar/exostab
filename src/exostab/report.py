@@ -29,7 +29,7 @@ from .indicators.megno import ENERGY_ERROR_MAX, MEGNO_CHAOTIC
 from .integrate import RunResult
 from .models import Provenance, System, Value
 from .sampling import E_MAX, SIN_I_MIN, Realization
-from .units import MEARTH_IN_MSUN, MJUP_IN_MEARTH, years_to_days
+from .units import MEARTH_IN_MSUN, format_count, format_years, years_to_days
 
 SCHEMA_VERSION = "1.0"
 
@@ -331,13 +331,16 @@ def _indicator_block(report: Report) -> Group:
 def group_flags(report: Report) -> list[tuple[str, str]]:
     """Completion flags with identical messages merged: ("b, c, d", message)."""
     host = report.system.star.name
+    order = {p.name: k for k, p in enumerate(report.system.planets)}
     groups: dict[str, list[str]] = {}
     for f in report.system.flags:
-        who = f.planet or "system"
-        if who.startswith(host + " "):
-            who = who[len(host) + 1 :]
-        groups.setdefault(f.message, []).append(who)
-    return [(", ".join(dict.fromkeys(names)), message) for message, names in groups.items()]
+        groups.setdefault(f.message, []).append(f.planet or "system")
+    out = []
+    for message, names in groups.items():
+        unique = sorted(dict.fromkeys(names), key=lambda n: order.get(n, len(order)))
+        short = [n[len(host) + 1 :] if n.startswith(host + " ") else n for n in unique]
+        out.append((", ".join(short), message))
+    return out
 
 
 def render(report: Report, console: Console, *, outputs: list[Path] | None = None) -> None:
@@ -360,7 +363,7 @@ def render(report: Report, console: Console, *, outputs: list[Path] | None = Non
     overall.append_text(_verdict_text(report.overall.verdict))
     overall.append("  " + report.overall.summary)
     horizon = (
-        f"N-body: {s.orbits:.3g} orbits of the innermost planet = {s.t_end_yr:.4g} yr, WHFast dt = "
+        f"N-body: {format_count(s.orbits)} orbits of the innermost planet = {format_years(s.t_end_yr)}, WHFast dt = "
         f"{(s.dt_yr or 0) * 365.25:.3g} d"
         + (", checked with IAS15" if s.check_integrator else "")
         + f"; {s.draws} Monte Carlo draws; seed {s.seed}; MEGNO chaotic at <Y> ≥ {s.megno_threshold:g}; "
@@ -398,10 +401,6 @@ def json_schema() -> dict[str, Any]:
     schema["$id"] = f"https://github.com/mimitoz62/exostab/schemas/report-{SCHEMA_VERSION}.json"
     schema["title"] = f"exostab report (schema {SCHEMA_VERSION})"
     return schema
-
-
-def mass_in_jupiter(m_earth: float) -> float:
-    return m_earth / MJUP_IN_MEARTH
 
 
 if __name__ == "__main__":  # pragma: no cover

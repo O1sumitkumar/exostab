@@ -43,7 +43,8 @@ def inner_solar_system() -> Realization:
         ("Mars", 1 / 3098708, 1.523662, 0.093412, 336.060, 355.453),
     ]
     bodies = tuple(
-        Body(n, m, a**1.5, e, math.radians(w), math.radians(L - w) % (2 * math.pi)) for n, m, a, e, w, L in planets
+        Body(n, m, a**1.5, e, math.radians(w), math.radians(L - w) % (2 * math.pi))
+        for n, m, a, e, w, L in planets
     )
     return Realization("inner solar system", 1.0, bodies)
 
@@ -66,7 +67,9 @@ def pair_at(delta: float, m: float = 1e-5, phase: float = 0.3) -> Realization:
     """Two equal circular planets exactly ``delta`` mutual Hill radii apart (as in the Note's notebook 02)."""
     x = 0.5 * ((2 * m) / 3) ** (1 / 3)
     a2 = (1 + delta * x) / (1 - delta * x)
-    return Realization("pair", 1.0, (Body("b", m, 1.0, 0.0, 0.0, 0.0), Body("c", m, a2**1.5, 0.0, 0.0, phase)))
+    return Realization(
+        "pair", 1.0, (Body("b", m, 1.0, 0.0, 0.0, 0.0), Body("c", m, a2**1.5, 0.0, 0.0, phase))
+    )
 
 
 def test_synthetic_pair_past_the_hill_limit_is_unstable() -> None:
@@ -85,8 +88,12 @@ def test_synthetic_pair_past_the_hill_limit_is_unstable() -> None:
         )
         for c, P, lam in (("b", 365.25, 0.0), ("c", 365.25 * ratio, 17.0))
     )
-    s = System(name="Synthetic", star=Star(name="S", mass_msun=Value(value=1.0)), planets=planets,
-               source=DataSource(kind="file"))
+    s = System(
+        name="Synthetic",
+        star=Star(name="S", mass_msun=Value(value=1.0)),
+        planets=planets,
+        source=DataSource(kind="file"),
+    )
     res = check_system(s, CheckSettings(orbits=5000, draws=20, seed=3))
     assert hill.pair_table(res.realizations[0])[0]["separation_hill"] == pytest.approx(2.5, rel=1e-3)
     assert res.report.indicators["hill"].verdict is Verdict.UNSTABLE
@@ -94,11 +101,16 @@ def test_synthetic_pair_past_the_hill_limit_is_unstable() -> None:
     assert res.report.overall.verdict is Verdict.UNSTABLE
 
 
-@pytest.mark.parametrize(("delta", "expect_encounter"), [(2.5, True), (3.0, True), (4.0, False), (4.5, False)])
+@pytest.mark.parametrize(
+    ("delta", "expect_encounter"), [(2.5, True), (3.0, True), (4.0, False), (4.5, False)]
+)
 def test_close_encounters_stop_near_the_gladman_limit(delta: float, expect_encounter: bool) -> None:
     """Reproduces notebook 02 of hd127195-stability: encounters stop between 3.30 and 3.35 R_H."""
     phases = np.linspace(0.3, 2 * np.pi, 8, endpoint=False)
-    met = [run(pair_at(delta, phase=p), RunConfig(n_orbits=5000, megno=False)).status == "encounter" for p in phases]
+    met = [
+        run(pair_at(delta, phase=p), RunConfig(n_orbits=5000, megno=False)).status == "encounter"
+        for p in phases
+    ]
     assert all(met) if expect_encounter else not any(met)
     # the criterion itself: 3.46 mutual Hill radii for these masses (full form, see indicators/hill.py)
     assert hill.gladman_critical_separation(1e-5, 1e-5, 1.0) == pytest.approx(3.462, abs=0.001)

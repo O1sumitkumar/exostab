@@ -25,6 +25,20 @@ REARTH_IN_RJUP: float = float((1 * u.R_earth).to(u.R_jup).value)
 G_SIM: float = float(const.G.to(u.au**3 / (u.M_sun * u.yr**2)).value)
 
 
+def format_years(t: float) -> str:
+    """Human-readable time span: "41.4 yr", "14,634 yr", "1.2e+07 yr"."""
+    if t < 100:
+        return f"{t:.3g} yr"
+    if t < 1e7:
+        return f"{t:,.0f} yr"
+    return f"{t:.3g} yr"
+
+
+def format_count(n: float) -> str:
+    """Human-readable count: "10,000", "1e+07"."""
+    return f"{n:,.0f}" if n < 1e7 else f"{n:.3g}"
+
+
 def days_to_years(days: float) -> float:
     return days * DAY_IN_YR
 

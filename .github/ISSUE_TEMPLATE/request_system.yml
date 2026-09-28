@@ -1,0 +1,29 @@
+name: Request or question about a system
+description: A system cannot be checked, is rejected, or you think its data or result need a closer look.
+labels: [system]
+body:
+  - type: input
+    id: system
+    attributes:
+      label: System name
+      placeholder: e.g. Kepler-90
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the problem?
+      description: Not found? Rejected (with which message)? A parameter you believe is wrong in the archive? A result that disagrees with the literature?
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Published sources
+      description: Papers (with DOI or ADS link) with the orbital solution you would like exostab to use or compare with.
+  - type: checkboxes
+    id: yaml
+    attributes:
+      label: Checks
+      options:
+        - label: I tried `exostab check --from-file` with the published solution (optional, but very helpful).

@@ -21,6 +21,7 @@ import numpy as np
 from .indicators.megno import MEGNO_CHAOTIC, classify_run
 from .integrate import RunResult
 from .sampling import Realization
+from .units import format_years
 
 if TYPE_CHECKING:
     from .analysis import CheckResult
@@ -52,10 +53,6 @@ _RC = {
     "savefig.bbox": "tight",
     "figure.facecolor": "white",
 }
-
-
-def _years(t: float) -> str:
-    return f"{t:,.0f} yr" if t >= 100 else f"{t:.3g} yr"
 
 
 def planet_color(k: int) -> str:
@@ -98,7 +95,7 @@ def orbits_figure(nominal: Realization, run: RunResult, title: str, path: Path) 
             "escape": " — stopped at an escape",
         }
         ax.set_title(
-            f"{title}: nominal orbits (lines) and positions over {_years(run.t_end)} (dots)"
+            f"{title}: nominal orbits (lines) and positions over {format_years(run.t_end)} (dots)"
             f"{status.get(run.status, '')}",
             fontsize=9,
             color=INK,

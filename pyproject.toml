@@ -52,6 +52,7 @@ dev = [
     "pre-commit>=3.5",
     "types-PyYAML",
     "pyarrow>=14",
+    "mkdocs>=1.6,<2",  # MkDocs 2.0 drops plugin/theme compatibility (Material for MkDocs warning, 2026)
     "mkdocs-material>=9.5",
 ]
 

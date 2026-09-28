@@ -4,23 +4,33 @@ import math
 from dataclasses import replace
 
 import pytest
-from conftest import two_planet_system
 
+from conftest import two_planet_system
 from exostab.analysis import CheckSettings, check_system, overall_verdict
 from exostab.indicators import AGREEMENT, DrawStats, IndicatorResult, Verdict, combine
 from exostab.indicators import megno as nb
 from exostab.integrate import RunResult
 from exostab.sampling import realizations
 
-S, M, U, I = Verdict.STABLE, Verdict.MARGINAL, Verdict.UNSTABLE, Verdict.INCONCLUSIVE
+S, M, U, INC = Verdict.STABLE, Verdict.MARGINAL, Verdict.UNSTABLE, Verdict.INCONCLUSIVE
 
 
 def result(**kw: object) -> RunResult:
-    base = dict(
-        label="nominal", integrator="whfast", dt=0.001, t_target=100.0, t_end=100.0, status="completed",
-        megno=2.0, lyapunov=0.0, energy_error=1e-9, walltime=0.1, encounter_distance=0.01,
-        n_orbits_innermost=1e4, n_orbits_outermost=1e3,
-    )
+    base: dict[str, object] = {
+        "label": "nominal",
+        "integrator": "whfast",
+        "dt": 0.001,
+        "t_target": 100.0,
+        "t_end": 100.0,
+        "status": "completed",
+        "megno": 2.0,
+        "lyapunov": 0.0,
+        "energy_error": 1e-9,
+        "walltime": 0.1,
+        "encounter_distance": 0.01,
+        "n_orbits_innermost": 1e4,
+        "n_orbits_outermost": 1e3,
+    }
     base.update(kw)
     return RunResult(**base)  # type: ignore[arg-type]
 
@@ -34,13 +44,13 @@ def test_combine_rules() -> None:
     assert combine(S, [S] * 19 + [M]) is S  # 95% agreement
     assert combine(S, [S] * 18 + [M, M]) is M
     assert combine(U, [U] * 20) is U
-    assert combine(I, [S] * 20) is I
-    assert combine(S, [S] * 15 + [I] * 5) is I  # more than 20% inconclusive
+    assert combine(INC, [S] * 20) is INC
+    assert combine(S, [S] * 15 + [INC] * 5) is INC  # more than 20% inconclusive
     assert AGREEMENT == 0.95
 
 
 def test_draw_stats() -> None:
-    d = DrawStats.from_verdicts([S, S, M, U, I])
+    d = DrawStats.from_verdicts([S, S, M, U, INC])
     assert (d.n, d.stable, d.marginal, d.unstable, d.inconclusive) == (5, 2, 1, 1, 1)
     assert d.count(M) == 1
 
@@ -67,14 +77,19 @@ def test_evaluate_counts_and_notes() -> None:
     runs = [result()] + [result(label=f"draw {k}") for k in range(19)] + [result(label="draw 20", megno=4.0)]
     ind = nb.evaluate(runs, result(integrator="ias15"))
     assert ind.verdict is S and ind.draws is not None and ind.draws.marginal == 1
-    assert ind.details["classification_counts"] == {"regular": 19, "chaotic": 1, "unstable": 0, "inconclusive": 0}
+    assert ind.details["classification_counts"] == {
+        "regular": 19,
+        "chaotic": 1,
+        "unstable": 0,
+        "inconclusive": 0,
+    }
     assert "19 regular, 1 chaotic" in ind.summary
     ind = nb.evaluate(runs, result(integrator="ias15", status="encounter"))
     assert ind.verdict is M and any("disagree" in n for n in ind.notes)
     ind = nb.evaluate([result(n_orbits_outermost=20)], None)
     assert ind.verdict is M and any("fewer than" in n for n in ind.notes)
     ind = nb.evaluate([result(energy_error=1e-3)], None)
-    assert ind.verdict is I and any("energy error" in n for n in ind.notes)
+    assert ind.verdict is INC and any("energy error" in n for n in ind.notes)
     ind = nb.evaluate([result(status="encounter", t_end=5.0)], None, random_phases=["X b"])
     assert ind.verdict is U and "encounter at t = 5" in ind.summary
     assert any("X b" in n and "random" in n for n in ind.notes)
@@ -114,12 +129,14 @@ def ind(name: str, v: Verdict) -> IndicatorResult:
         (S, S, M, M),
         (S, S, U, U),
         (U, U, U, U),
-        (S, S, I, I),
-        (U, S, I, I),
+        (S, S, INC, INC),
+        (U, S, INC, INC),
         (M, S, S, M),
     ],
 )
-def test_overall_verdict_is_conservative(hill: Verdict, amd: Verdict, nbody: Verdict, expected: Verdict) -> None:
+def test_overall_verdict_is_conservative(
+    hill: Verdict, amd: Verdict, nbody: Verdict, expected: Verdict
+) -> None:
     o = overall_verdict({"hill": ind("hill", hill), "amd": ind("amd", amd), "nbody": ind("nbody", nbody)})
     assert o.verdict is expected
     if expected is not S:

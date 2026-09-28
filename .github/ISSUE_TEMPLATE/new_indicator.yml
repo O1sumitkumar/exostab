@@ -1,0 +1,28 @@
+name: New indicator
+description: Propose a new stability indicator or criterion.
+labels: [indicator]
+body:
+  - type: textarea
+    id: indicator
+    attributes:
+      label: Indicator
+      description: What does it measure, and when does it apply (number of planets, eccentricities, resonances)?
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Peer-reviewed sources with DOI, and the equations to implement (equation numbers).
+    validations:
+      required: true
+  - type: textarea
+    id: verdict
+    attributes:
+      label: Verdict mapping
+      description: How should its output map to stable / marginal / unstable / inconclusive? Is it a sufficient condition, a heuristic, or a direct test?
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Published numbers the implementation can be tested against.

@@ -1,0 +1,58 @@
+cff-version: 1.2.0
+message: "If you use exostab, please cite it as below, together with the methods and data it relies on (see docs/references.bib)."
+title: "exostab: honest, traceable orbital-stability indicators for known exoplanet systems"
+abstract: >-
+  exostab reports whether a known multi-planet system is dynamically stable using three indicators:
+  Hill spacing, the angular momentum deficit, and direct N-body integration with the MEGNO chaos
+  indicator, with parameters from the NASA Exoplanet Archive and every data assumption recorded.
+type: software
+authors:
+  - family-names: "Öz"
+    given-names: "Mehmet"
+    orcid: "https://orcid.org/0009-0007-1005-7640"
+    email: "mehmet@mehmet-oz.com"
+version: "0.1.0"
+license: MIT
+repository-code: "https://github.com/mimitoz62/exostab"
+url: "https://github.com/mimitoz62/exostab"
+keywords:
+  - exoplanets
+  - orbital stability
+  - celestial mechanics
+  - N-body
+  - REBOUND
+  - MEGNO
+  - angular momentum deficit
+references:
+  - type: article
+    authors:
+      - family-names: Rein
+        given-names: H.
+      - family-names: Liu
+        given-names: S.-F.
+    title: "REBOUND: an open-source multi-purpose N-body code for collisional dynamics"
+    journal: "Astronomy & Astrophysics"
+    volume: 537
+    start: A128
+    year: 2012
+    doi: "10.1051/0004-6361/201118085"
+  - type: article
+    authors:
+      - family-names: Laskar
+        given-names: J.
+      - family-names: Petit
+        given-names: A. C.
+    title: "AMD-stability and the classification of planetary systems"
+    journal: "Astronomy & Astrophysics"
+    volume: 605
+    start: A72
+    year: 2017
+    doi: "10.1051/0004-6361/201630022"
+  - type: data
+    authors:
+      - name: "NASA Exoplanet Science Institute"
+    title: "Planetary Systems Composite Table"
+    publisher:
+      name: IPAC
+    year: 2020
+    doi: "10.26133/NEA13"

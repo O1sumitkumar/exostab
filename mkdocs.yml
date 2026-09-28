@@ -1,0 +1,38 @@
+site_name: exostab
+site_description: Honest, traceable orbital-stability indicators for known exoplanet systems
+site_author: Mehmet Öz
+repo_url: https://github.com/mimitoz62/exostab
+repo_name: mimitoz62/exostab
+edit_uri: edit/main/docs/
+copyright: MIT License, Mehmet Öz
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+  palette:
+    - scheme: default
+      toggle: {icon: material/weather-night, name: Dark mode}
+    - scheme: slate
+      toggle: {icon: material/weather-sunny, name: Light mode}
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - CLI reference: cli.md
+  - Methods: methods.md
+  - Data and assumptions: data-assumptions.md
+  - Validation: validation.md
+  - FAQ: faq.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format

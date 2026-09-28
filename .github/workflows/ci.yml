@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    env:
+      EXOSTAB_OFFLINE: "1"  # tests use the bundled snapshot, never the network
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Ruff
+        run: |
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+      - name: Mypy
+        run: mypy
+      - name: Tests with coverage
+        run: pytest --cov=exostab --cov-report=term-missing --cov-report=xml --cov-fail-under=85
+      - name: CLI smoke test
+        run: |
+          exostab --version
+          exostab list --min-planets 4 --max-period-days 200 --offline
+          exostab check "TOI-270" --offline --orbits 2000 --draws 3 --out smoke/
+          test -f smoke/report.json && test -f smoke/orbits.png && test -f smoke/megno.png
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: CLI reference is up to date
+        run: |
+          python -m typer exostab.cli utils docs --name exostab --title "CLI reference" --output /tmp/cli.md
+          diff -u docs/cli.md /tmp/cli.md
+      - name: Build documentation (strict)
+        run: mkdocs build --strict
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - name: Wheel contains the snapshot and the schema
+        run: |
+          python -m zipfile -l dist/*.whl | grep -q pscomppars_snapshot.csv
+          python -m zipfile -l dist/*.whl | grep -q report.schema.json

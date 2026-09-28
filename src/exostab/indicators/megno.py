@@ -30,6 +30,7 @@ import numpy as np
 
 from ..integrate import RunConfig, RunResult, run
 from ..sampling import Realization
+from ..units import format_count, format_years
 from . import DrawStats, IndicatorResult, Verdict, combine
 
 # <Y> at or above this value counts as chaotic. Same threshold as the HD 127195 Research Note;
@@ -161,10 +162,13 @@ def evaluate(
     nom_text = {
         "regular": f"regular (<Y> = {nominal.megno:.2f})" if nominal.megno is not None else "regular",
         "chaotic": f"chaotic (<Y> = {nominal.megno:.2f})" if nominal.megno is not None else "chaotic",
-        "unstable": f"{nominal.status} at t = {nominal.t_end:.3g} yr",
+        "unstable": f"{nominal.status} at t = {format_years(nominal.t_end)}",
         "inconclusive": "inconclusive",
     }[c_nom]
-    summary = f"Nominal run {nom_text} over {years:.3g} yr ({nominal.n_orbits_innermost:.3g} inner orbits)"
+    summary = (
+        f"Nominal run {nom_text} over {format_years(years)} "
+        f"({format_count(nominal.n_orbits_innermost)} inner orbits)"
+    )
     if draws:
         summary += (
             f"; draws: {counts['regular']} regular, {counts['chaotic']} chaotic, "

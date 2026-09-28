@@ -8,10 +8,10 @@ import math
 from pathlib import Path
 
 import pytest
-from conftest import EXAMPLES, two_planet_system
 from rich.console import Console
 from typer.testing import CliRunner
 
+from conftest import EXAMPLES, two_planet_system
 from exostab import __version__
 from exostab.analysis import CheckSettings, check_system
 from exostab.cli import app, slug
@@ -31,7 +31,16 @@ def test_report_json_roundtrip_and_provenance(small_result, tmp_path: Path) -> N
     path = write_json(small_result.report, tmp_path / "report.json")
     data = json.loads(path.read_text())
     assert data["schema_version"] == SCHEMA_VERSION
-    for key in ("seed", "orbits", "draws", "integrator", "dt_yr", "t_end_yr", "energy_error_max", "megno_threshold"):
+    for key in (
+        "seed",
+        "orbits",
+        "draws",
+        "integrator",
+        "dt_yr",
+        "t_end_yr",
+        "energy_error_max",
+        "megno_threshold",
+    ):
         assert key in data["settings"]
     for key in ("exostab", "rebound", "numpy", "python"):
         assert data["software"][key]
@@ -66,7 +75,9 @@ def test_flags_are_grouped_in_the_card() -> None:
     from exostab.data import load_system
     from exostab.report import group_flags
 
-    res = check_system(load_system("TRAPPIST-1"), CheckSettings(orbits=50, draws=0, jobs=1, ias15_check=False))
+    res = check_system(
+        load_system("TRAPPIST-1"), CheckSettings(orbits=50, draws=0, jobs=1, ias15_check=False)
+    )
     groups = group_flags(res.report)
     transit = [who for who, msg in groups if "transit mid-time" in msg]
     assert transit == ["b, c, d, e, f, g, h"]
@@ -119,7 +130,16 @@ def test_check_by_name_offline(tmp_path: Path) -> None:
 def test_check_inclination_prior(tmp_path: Path) -> None:
     r = runner.invoke(
         app,
-        ["check", "HD 127195", *FAST, "--no-plots", "--inclination-prior", "isotropic", "--out", str(tmp_path)],
+        [
+            "check",
+            "HD 127195",
+            *FAST,
+            "--no-plots",
+            "--inclination-prior",
+            "isotropic",
+            "--out",
+            str(tmp_path),
+        ],
     )
     assert r.exit_code == 0, r.output
     assert json.loads((tmp_path / "report.json").read_text())["settings"]["inclination_prior"] == "isotropic"
@@ -158,8 +178,26 @@ def test_list_command() -> None:
 def test_sweep_command(tmp_path: Path) -> None:
     r = runner.invoke(
         app,
-        ["sweep", "--from-file", str(EXAMPLES / "hd127195_note.yaml"), "--planet", "b", "--param", "e",
-         "--range", "0", "0.6", "--steps", "4", "--orbits", "200", "--jobs", "1", "--out", str(tmp_path)],
+        [
+            "sweep",
+            "--from-file",
+            str(EXAMPLES / "hd127195_note.yaml"),
+            "--planet",
+            "b",
+            "--param",
+            "e",
+            "--range",
+            "0",
+            "0.6",
+            "--steps",
+            "4",
+            "--orbits",
+            "200",
+            "--jobs",
+            "1",
+            "--out",
+            str(tmp_path),
+        ],
     )
     assert r.exit_code == 0, r.output
     rows = list(csv.DictReader((tmp_path / "sweep.csv").open()))
@@ -170,30 +208,66 @@ def test_sweep_command(tmp_path: Path) -> None:
     assert r.exit_code == 1 and "no planet" in r.output
 
 
-@pytest.mark.parametrize(("param", "rng"), [("mass", ("100", "300")), ("period", ("500", "520")), ("omega", ("0", "90"))])
+@pytest.mark.parametrize(
+    ("param", "rng"), [("mass", ("100", "300")), ("period", ("500", "520")), ("omega", ("0", "90"))]
+)
 def test_sweep_other_parameters(tmp_path: Path, param: str, rng: tuple[str, str]) -> None:
     r = runner.invoke(
         app,
-        ["sweep", "HD 127195", "--planet", "c", "--param", param, "--range", *rng, "--steps", "2",
-         "--orbits", "100", "--jobs", "1", "--out", str(tmp_path)],
+        [
+            "sweep",
+            "HD 127195",
+            "--planet",
+            "c",
+            "--param",
+            param,
+            "--range",
+            *rng,
+            "--steps",
+            "2",
+            "--orbits",
+            "100",
+            "--jobs",
+            "1",
+            "--out",
+            str(tmp_path),
+        ],
     )
     assert r.exit_code == 0, r.output
 
 
 def test_sweep_rejects_invalid_values() -> None:
-    from exostab.sweep import _modified
     from exostab.sampling import realizations
+    from exostab.sweep import _modified
 
     nom = realizations(two_planet_system(), 0, seed=0)[0]
-    for param, value in (("e", 1.2), ("mass", -1.0), ("period", 0.0), ("bogus", 1.0)):
-        with pytest.raises(ValueError):
+    for param, value, match in (
+        ("e", 1.2, "eccentricity"),
+        ("mass", -1.0, "mass"),
+        ("period", 0.0, "period"),
+        ("bogus", 1.0, "unknown"),
+    ):
+        with pytest.raises(ValueError, match=match):
             _modified(nom, 0, param, value)
 
 
 def test_catalog_build(tmp_path: Path) -> None:
     r = runner.invoke(
         app,
-        ["catalog", "build", "--limit", "3", "--orbits", "100", "--draws", "1", "--jobs", "2", "--out", str(tmp_path)],
+        [
+            "catalog",
+            "build",
+            "--limit",
+            "3",
+            "--orbits",
+            "100",
+            "--draws",
+            "1",
+            "--jobs",
+            "2",
+            "--out",
+            str(tmp_path),
+        ],
     )
     assert r.exit_code == 0, r.output
     rows = list(csv.DictReader((tmp_path / "catalog.csv").open()))
@@ -209,7 +283,7 @@ def test_catalog_build(tmp_path: Path) -> None:
 def test_catalog_timeout_and_skip(tmp_path: Path) -> None:
     from exostab.catalog.build import CatalogSettings, build_catalog
 
-    paths, rows = build_catalog(CatalogSettings(orbits=1e6, draws=0, max_seconds=1, jobs=1), tmp_path, limit=1)
+    _, rows = build_catalog(CatalogSettings(orbits=1e6, draws=0, max_seconds=1, jobs=1), tmp_path, limit=1)
     assert rows[0]["status"] == "timeout" and rows[0]["overall"] is None
     from exostab.catalog.build import check_one
     from exostab.data import load_rows
