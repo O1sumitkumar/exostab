@@ -6,30 +6,23 @@ and parameters fetched from the NASA Exoplanet Archive.
 
 This file is the working plan. Decisions and their reasons live in [DECISIONS.md](DECISIONS.md).
 
-## Status (updated 2026-09-28)
+## Status (updated 2026-09-28, end of the v0.1 build session)
 
-**Paused after setup. No package code written yet.**
+**v0.1 is built and tested locally.** What is done, what is waiting, and why:
 
 Done:
-- [x] Environment inspected (see DECISIONS.md, D0)
-- [x] Name chosen: `exostab` (D1), project folder `~/Projects/exostab`, git initialised on `main`
-- [x] Local dev environment: `.venv` (Python 3.12, created with `uv`) with the core dependencies installed
-- [x] Archive reachable; `pscomppars` column names checked against `TAP_SCHEMA` (D6)
-- [x] Current PyPI versions of every planned dependency checked (D4, D5, D7)
+- [x] Reference verification: every citation checked against Crossref/arXiv/DataCite, and the load-bearing
+  formulas taken from the arXiv LaTeX sources (DECISIONS.md, D13); `docs/references.bib`.
+- [x] Steps 1–11 below: package, data layer (archive, cache, snapshot, completion rules), three indicators,
+  report and JSON schema, plots, CLI (`check`, `sweep`, `list`, `catalog build`), unit and property tests
+  (98% coverage), validation suite (16 slow tests), docs, CI workflows, repository files.
+- [x] Every README command run by hand (see the session's final report).
 
-Started, not finished:
-- [ ] Reference verification. A multi-agent check of every citation (title, year, journal, DOI) and
-  extraction of the load-bearing formulas (Gladman 1993 criterion, Laskar & Petit 2017 critical AMD,
-  Petit et al. 2017 MMR-overlap criterion, Petit et al. 2018 AMD-Hill criterion, Chen & Kipping 2017
-  parameters, MEGNO thresholds used in the literature) was launched and then stopped when the session
-  was paused. **Nothing from it has been recorded; re-run it first.** The script is kept locally (not
-  committed) in `.handoff/verify_references.workflow.js`.
-
-### How to resume
-
-1. Open a Claude Code session in `~/Projects/exostab` and say: *"Continue exostab from PLAN.md."*
-2. `source .venv/bin/activate` (or recreate it: `uv venv --python 3.12 .venv` and reinstall; see D4).
-3. Re-run reference verification (step 0 below), then start the v0.1 spine (step 1).
+Waiting:
+- [ ] Step 12: create the public GitHub repository and push (needs Mehmet's go-ahead on the commit e-mail
+  address; see the final report).
+- [ ] Step 13: open the issues listed in WHATS_NEXT.md once the repository exists.
+- [ ] Account-side: PyPI trusted publisher, Zenodo, GitHub Pages; then tag v0.1.0.
 
 ## v0.1 — minimum viable product (build end to end first)
 

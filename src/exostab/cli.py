@@ -213,10 +213,12 @@ def sweep(
     for col in ("value", "N-body", "<Y>", "Hill", "AMD"):
         t.add_column(col)
     for r in rows:
+        # <Y> of a run stopped by a close encounter or escape is not meaningful
+        show_megno = r["megno"] is not None and r["nbody_class"] != "unstable"
         t.add_row(
             f"{r['value']:.4g}",
             r["nbody_class"],
-            f"{r['megno']:.3g}" if r["megno"] is not None else "—",
+            f"{r['megno']:.3g}" if show_megno else "—",
             r["hill_verdict"],
             r["amd_verdict"],
         )

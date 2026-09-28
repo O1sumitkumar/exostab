@@ -91,7 +91,7 @@ def test_evaluate_counts_and_notes() -> None:
     ind = nb.evaluate([result(energy_error=1e-3)], None)
     assert ind.verdict is INC and any("energy error" in n for n in ind.notes)
     ind = nb.evaluate([result(status="encounter", t_end=5.0)], None, random_phases=["X b"])
-    assert ind.verdict is U and "encounter at t = 5" in ind.summary
+    assert ind.verdict is U and "close encounter after 5 yr" in ind.summary
     assert any("X b" in n and "random" in n for n in ind.notes)
     ind = nb.evaluate([result()] + [result(megno=5.0)] * 5, None)
     assert ind.verdict is M and any("draws disagree" in n for n in ind.notes)

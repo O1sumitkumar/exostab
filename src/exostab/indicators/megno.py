@@ -159,16 +159,23 @@ def evaluate(
             break
     years = nominal.t_target
     counts = {c: c_draws.count(c) for c in ("regular", "chaotic", "unstable", "inconclusive")}
-    nom_text = {
-        "regular": f"regular (<Y> = {nominal.megno:.2f})" if nominal.megno is not None else "regular",
-        "chaotic": f"chaotic (<Y> = {nominal.megno:.2f})" if nominal.megno is not None else "chaotic",
-        "unstable": f"{nominal.status} at t = {format_years(nominal.t_end)}",
-        "inconclusive": "inconclusive",
-    }[c_nom]
-    summary = (
-        f"Nominal run {nom_text} over {format_years(years)} "
-        f"({format_count(nominal.n_orbits_innermost)} inner orbits)"
-    )
+    planned = nominal.t_target / (nominal.t_end / nominal.n_orbits_innermost) if nominal.t_end > 0 else 0.0
+    if c_nom == "unstable":
+        what = "close encounter" if nominal.status == "encounter" else "escape"
+        summary = (
+            f"Nominal run: {what} after {format_years(nominal.t_end)} "
+            f"({format_count(nominal.n_orbits_innermost)} of {format_count(planned)} planned inner orbits)"
+        )
+    else:
+        nom_text = {
+            "regular": f"regular (<Y> = {nominal.megno:.2f})" if nominal.megno is not None else "regular",
+            "chaotic": f"chaotic (<Y> = {nominal.megno:.2f})" if nominal.megno is not None else "chaotic",
+            "inconclusive": "inconclusive",
+        }[c_nom]
+        summary = (
+            f"Nominal run {nom_text} over {format_years(years)} "
+            f"({format_count(nominal.n_orbits_innermost)} inner orbits)"
+        )
     if draws:
         summary += (
             f"; draws: {counts['regular']} regular, {counts['chaotic']} chaotic, "

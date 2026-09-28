@@ -55,6 +55,13 @@ _RC = {
 }
 
 
+def _plotted_megno(megno: float | None, cls: str) -> float:
+    """<Y> as plotted: runs stopped by an encounter, and non-finite values, sit at MEGNO_CLIP."""
+    if cls == "unstable" or megno is None or not math.isfinite(megno):
+        return MEGNO_CLIP
+    return min(megno, MEGNO_CLIP)
+
+
 def planet_color(k: int) -> str:
     return PLANET_COLORS[k % len(PLANET_COLORS)]
 
@@ -123,7 +130,7 @@ def megno_figure(runs: Sequence[RunResult], ias15: RunResult | None, title: str,
                 np.minimum(nominal.series["megno"], MEGNO_CLIP),
                 color=PLANET_COLORS[0],
                 lw=1.6,
-                label=f"WHFast (nominal, <Y> = {nominal.megno:.3g})",
+                label=f"WHFast (nominal, <Y> = {nominal.megno:.3f})",
             )
             ax_e.semilogy(
                 t[1:], np.maximum(nominal.series["energy_error"][1:], 1e-17), color=PLANET_COLORS[0], lw=1.2
@@ -135,7 +142,7 @@ def megno_figure(runs: Sequence[RunResult], ias15: RunResult | None, title: str,
                 color=PLANET_COLORS[1],
                 lw=1.4,
                 ls="--",
-                label=f"IAS15 check (<Y> = {ias15.megno:.3g})",
+                label=f"IAS15 check (<Y> = {ias15.megno:.3f})",
             )
             ax_e.semilogy(
                 ias15.series["t"][1:],
@@ -164,10 +171,7 @@ def megno_figure(runs: Sequence[RunResult], ias15: RunResult | None, title: str,
         ax_e.set_xlabel("time (yr)")
 
         classes = [classify_run(r) for r in runs[1:]]
-        ys = [
-            min(r.megno, MEGNO_CLIP) if r.megno is not None and math.isfinite(r.megno) else MEGNO_CLIP
-            for r in runs[1:]
-        ]
+        ys = [_plotted_megno(r.megno, c) for r, c in zip(runs[1:], classes, strict=True)]
         order = np.argsort(ys)
         for cls, (color, marker, label) in STATUS.items():
             idx = [i for i in range(len(ys)) if classes[order[i]] == cls] if ys else []
@@ -215,10 +219,7 @@ def sweep_figure(rows: Sequence[dict[str, Any]], param_label: str, title: str, p
             if sel:
                 ax.scatter(
                     x[sel],
-                    [
-                        min(rows[i]["megno"], MEGNO_CLIP) if rows[i]["megno"] is not None else MEGNO_CLIP
-                        for i in sel
-                    ],
+                    [_plotted_megno(rows[i]["megno"], cls) for i in sel],
                     color=color,
                     marker=marker,
                     s=30,
@@ -228,21 +229,13 @@ def sweep_figure(rows: Sequence[dict[str, Any]], param_label: str, title: str, p
                     zorder=3,
                 )
         ax.axhline(MEGNO_CHAOTIC, color=MUTED, lw=0.8, ls="--")
-        ax.set_ylabel("MEGNO <Y>")
+        ax.set_ylabel(f"MEGNO <Y>\n(encounters at {MEGNO_CLIP:g})")
         ax.set_title(title, fontsize=9, loc="left", color=INK)
         ax.legend(fontsize=7.5, loc="upper left")
         ax = axes[1]
-        ax.plot(x, [r["hill_min_separation"] for r in rows], color=PLANET_COLORS[0], lw=1.6, marker="o", ms=3)
-        ax.plot(
-            x,
-            [r["hill_gladman_limit"] for r in rows],
-            color=MUTED,
-            lw=1.0,
-            ls="--",
-            label="Gladman limit (circular)",
-        )
-        ax.set_ylabel("closest pair\n(mutual Hill radii)")
-        ax.legend(fontsize=7.5, loc="best")
+        ax.plot(x, [r["hill_margin_min"] for r in rows], color=PLANET_COLORS[0], lw=1.6, marker="o", ms=3)
+        ax.axhline(0.0, color=MUTED, lw=0.8, ls="--")
+        ax.set_ylabel("Gladman margin,\nclosest pair\n(Hill stable above 0)")
         ax = axes[2]
         ax.plot(x, [r["amd_beta_max"] for r in rows], color=PLANET_COLORS[2], lw=1.6, marker="o", ms=3)
         ax.axhline(1.0, color=MUTED, lw=0.8, ls="--")

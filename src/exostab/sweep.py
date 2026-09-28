@@ -87,6 +87,7 @@ def run_sweep(
                 "t_end_yr": res.t_end,
                 "hill_verdict": hill.classify(r).value,
                 "hill_min_separation": closest["separation_hill"],
+                "hill_margin_min": min(p["gladman_margin"] for p in pairs),
                 "hill_gladman_limit": closest["gladman_critical_hill"],
                 "amd_verdict": amd.classify(r).value,
                 "amd_beta_max": max(p["beta"] for p in a["pairs"]),
