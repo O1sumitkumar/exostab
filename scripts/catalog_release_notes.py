@@ -22,7 +22,9 @@ def notes(folder: Path) -> str:
         f"Settings: {s['orbits']:,.0f} orbits of the innermost planet, {s['draws']} Monte Carlo draws, seed "
         f"{s['seed']}, at most {s['max_seconds']:g} s per system.",
         "",
-        "Overall verdicts: " + ", ".join(f"{k}: {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1])) + ".",
+        "Overall verdicts: "
+        + ", ".join(f"{k}: {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
+        + ".",
         "",
         "`catalog.csv`, `catalog.parquet` and `catalog_meta.json` are the latest version; files with a date in "
         "their name are kept for reference. Column definitions and caveats: "

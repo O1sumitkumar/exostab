@@ -35,3 +35,6 @@ exostab-results/
 
 # Local tool settings
 .claude/
+
+# Generated during the docs build
+docs/data/

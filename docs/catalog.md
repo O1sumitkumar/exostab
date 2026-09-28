@@ -4,8 +4,6 @@ exostab's three indicators for every multi-planet system in the NASA Exoplanet A
 Composite Parameters table, recomputed every week by the
 [catalog workflow](https://github.com/mimitoz62/exostab/blob/main/.github/workflows/catalog.yml).
 
-**Download:** [`catalog.csv` and `catalog.parquet`](https://github.com/mimitoz62/exostab/releases/tag/catalog) (GitHub release "catalog"; the metadata file
-lists the settings and the archive download date). Column definitions are at the end of this page.
 
 !!! warning "Read the verdicts with their caveats"
     Every system is checked with the same default settings. Missing orbital phases are drawn at random,

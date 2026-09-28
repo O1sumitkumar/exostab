@@ -1,10 +1,12 @@
 name: Weekly catalog
 
 # Recomputes the stability indicators of every multi-planet system in the NASA Exoplanet Archive and publishes
-# catalog.csv, catalog.parquet and catalog_meta.json on the GitHub release "catalog" (updated in place, so it
-# does not create a new release, and therefore no new Zenodo software version, every week). A dated copy of
-# each file is kept on the same release. Each system is capped at MAX_SECONDS of wall time; systems over the
-# cap are recorded as "timeout" (docs/catalog.md explains the columns).
+# catalog.csv, catalog.parquet and catalog_meta.json on the branch "catalog-data" (one commit per week, so the
+# git history is the version history; dated CSV copies are kept in archive/). A branch is used rather than a
+# GitHub release because Zenodo archives every GitHub release, pre-releases included, as a new version of the
+# software record. Each system is capped at MAX_SECONDS of wall time; systems over the cap are recorded as
+# "timeout" (docs/catalog.md explains the columns). Optionally, a new version of a Zenodo dataset is published
+# (see scripts/zenodo_catalog.py).
 
 on:
   schedule:
@@ -16,8 +18,12 @@ on:
         default: "0"
 
 permissions:
-  contents: write  # upload release assets
+  contents: write  # push to the catalog-data branch
   actions: write   # start the docs workflow afterwards
+
+concurrency:
+  group: catalog
+  cancel-in-progress: false
 
 env:
   MAX_SECONDS: "300"
@@ -31,6 +37,8 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -43,18 +51,26 @@ jobs:
           exostab catalog build --refresh --out catalog \
             --orbits "$ORBITS" --draws "$DRAWS" --seed "$SEED" --max-seconds "$MAX_SECONDS" \
             --limit "${{ inputs.limit || '0' }}" | tail -n 5
-      - name: Publish on the release "catalog"
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Publish on the branch catalog-data
         run: |
           day=$(date -u +%Y-%m-%d)
-          for f in catalog.csv catalog.parquet catalog_meta.json; do cp "catalog/$f" "catalog/${f%.*}-$day.${f##*.}"; done
-          python scripts/catalog_release_notes.py catalog > notes.md
-          if ! gh release view catalog >/dev/null 2>&1; then
-            gh release create catalog --prerelease --title "Stability catalog (updated weekly)" --notes-file notes.md --target "$GITHUB_SHA"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin catalog-data >/dev/null; then
+            git fetch origin catalog-data
+            git worktree add publish origin/catalog-data
+            git -C publish switch -c catalog-data
+          else
+            git worktree add --detach publish
+            git -C publish switch --orphan catalog-data
           fi
-          gh release edit catalog --notes-file notes.md
-          gh release upload catalog catalog/* --clobber
+          mkdir -p publish/archive
+          cp catalog/catalog.csv catalog/catalog.parquet catalog/catalog_meta.json publish/
+          cp catalog/catalog.csv "publish/archive/catalog-$day.csv"
+          python scripts/catalog_release_notes.py catalog > publish/README.md
+          git -C publish add -A
+          git -C publish commit -m "Catalog of $day" || echo "nothing changed"
+          git -C publish push origin catalog-data
       - uses: actions/upload-artifact@v7
         with:
           name: catalog

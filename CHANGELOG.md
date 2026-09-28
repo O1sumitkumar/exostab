@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Weekly catalog workflow publishing `catalog.csv`, `catalog.parquet` and `catalog_meta.json` on the branch
+  `catalog-data`, a sortable catalog page in the docs, and an optional Zenodo dataset upload.
+- Validation figures in the docs.
+- Streamlit web app (`pip install "exostab[web]"`, `streamlit run streamlit_app.py`).
 - `exostab check --budget fast|thorough|<seconds>` chooses the run length and number of draws from a measured
   integration speed (report schema 1.1 records `settings.budget_s`).
 

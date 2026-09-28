@@ -278,3 +278,21 @@ this is the Note's rule. Effects on the validation set: none, except GJ 876 with
 formerly "inconclusive" draw is now a close encounter (3 / 5 / 12 instead of 3 / 6 / 10 + 1). Measured cost:
 none.
 
+## D21 — Weekly catalog and its DOI (2026-09-28)
+
+- `.github/workflows/catalog.yml` runs every Monday: `exostab catalog build --refresh` over every host with two or
+  more planets, with 10,000 orbits of the innermost planet, 10 draws, seed 0 and a cap of **300 s of wall time
+  per system** (systems over the cap are listed as "timeout"). A full local run on 2026-09-28 (1,060 hosts, 13
+  workers on an Apple M4 Pro) took 9.3 minutes, 6,436 CPU-seconds in total, 46 s for the slowest system; no
+  system timed out at the 120 s default. A 4-core GitHub runner should need roughly 1–1.5 hours (estimate, not yet
+  measured).
+- Results go to the branch `catalog-data` (one commit per week, dated CSV copies in `archive/`), not to a GitHub
+  release: Zenodo archives every published GitHub release, pre-releases included, as a new version of the
+  software record (invenio-github 7.1.2 source, checked 2026-09-28), which would mix weekly data into the
+  software DOI. The docs workflow copies the latest files to the site and renders `docs/catalog.md` as a sortable
+  table.
+- DOI for the catalog: optional. Once the maintainer creates a Zenodo dataset record and stores `ZENODO_TOKEN`
+  (secret) and `ZENODO_CATALOG_RECORD` (variable), the workflow publishes a new version of that record every
+  week through Zenodo's documented deposit API (`scripts/zenodo_catalog.py`, tested against a fake server only;
+  it must be tried on sandbox.zenodo.org first).
+
