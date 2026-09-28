@@ -19,9 +19,10 @@ Done:
 - [x] Every README command run by hand (see the session's final report).
 
 Waiting:
-- [ ] Step 12: create the public GitHub repository and push (needs Mehmet's go-ahead on the commit e-mail
-  address; see the final report).
-- [ ] Step 13: open the issues listed in WHATS_NEXT.md once the repository exists.
+- [ ] Step 12: the public repository mimitoz62/exostab exists (commits use the GitHub noreply address), but
+  the push waits for Mehmet to add the `workflow` scope: `gh auth refresh -h github.com -s workflow`, then
+  `git push -u origin main`. After that, check that CI is green.
+- [x] Step 13: issues #1–#13 opened (WHATS_NEXT.md).
 - [ ] Account-side: PyPI trusted publisher, Zenodo, GitHub Pages; then tag v0.1.0.
 
 ## v0.1 — minimum viable product (build end to end first)

@@ -90,13 +90,12 @@ arXiv:1108.5481). Published working thresholds vary with integration length: |�
 "chaotic" on colour scales (Goździewski et al. 2015, arXiv:1510.02776). These four were read in their arXiv
 LaTeX sources but are not in `docs/references.bib`. 2.2 is the Research Note's value, which the HD 127195 validation reproduces. A lower value would be
 more conservative but, at 1e4 orbits, would also flag regular orbits whose ⟨Y⟩ has not converged (for
-example TRAPPIST-1's nominal run gives 2.17 with both WHFast and IAS15). Kept at 2.2 and opened as an issue
-("calibrate the MEGNO threshold against run length").
+example TRAPPIST-1's nominal run gives 2.17 with both WHFast and IAS15). Kept at 2.2; improvement tracked in issue #6.
 
 **Energy-error limit (uncertain).** Measured values: 1.4e-9 (inner Solar System, 1e4 yr), 4e-8 (GJ 876),
 2.4e-7 (TRAPPIST-1), up to 3.5e-6 for chaotic HD 127195 draws. 1e-5 leaves room for chaotic runs whose
 MEGNO is still meaningful while catching broken integrations. Petit et al. (2018) used 1e-8 with a
-higher-order integrator. Opened as an issue.
+higher-order integrator. Improvement tracked in issue #7.
 
 ## D9 — Orbital phases (resolved, 2026-09-28)
 
@@ -182,7 +181,7 @@ reason.
   crossing orbits; "stable" only if every adjacent pair is ≥ 12 mutual Hill radii apart; otherwise
   "marginal". Pu & Wu (2015): about 10 for circular coplanar orbits and about 12 for e ≈ 0.02 to survive
   1 Gyr; Obertas et al. (2017) find 8.5–8.6 for 10^9–10^10 orbits of five Earth-mass planets on circular
-  orbits. The conservative 12 is used; opened as an issue.
+  orbits. The conservative 12 is used; improvement tracked in issue #8.
 
 ## D13 — Reference verification (2026-09-28)
 
