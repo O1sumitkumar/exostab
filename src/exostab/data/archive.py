@@ -1,0 +1,140 @@
+"""Client for the NASA Exoplanet Archive Planetary Systems Composite Parameters table (``pscomppars``).
+
+The table is queried through the archive's Table Access Protocol (TAP) service with astroquery. Column
+names were checked against ``TAP_SCHEMA.columns`` on 2026-09-28 (DECISIONS.md, D6). Rows are kept as
+plain dictionaries (``None`` for missing values) so that the live archive, the on-disk cache and the
+offline snapshot all look the same to the rest of the package.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import math
+import time
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
+
+TABLE = "pscomppars"
+TAP_SERVICE = "https://exoplanetarchive.ipac.caltech.edu/TAP"
+MULTI_PLANET_WHERE = "sy_pnum >= 2"
+
+Row = dict[str, Any]
+
+# (column, type). Units follow TAP_SCHEMA: periods and times in days, angles in degrees, planet masses
+# in Earth masses, radii in Earth radii, stellar mass in solar masses, semi-major axis in AU.
+_ERR = ("err1", "err2")
+COLUMNS: list[tuple[str, str]] = [
+    ("pl_name", "str"),
+    ("hostname", "str"),
+    ("pl_letter", "str"),
+    ("sy_pnum", "int"),
+    ("sy_snum", "int"),
+    ("cb_flag", "int"),
+    ("tran_flag", "int"),
+    ("rv_flag", "int"),
+    ("ttv_flag", "int"),
+    ("pl_controv_flag", "int"),
+    ("discoverymethod", "str"),
+    ("disc_year", "int"),
+]
+for _base in (
+    "pl_orbper",
+    "pl_orbsmax",
+    "pl_orbeccen",
+    "pl_orblper",
+    "pl_orbtper",
+    "pl_tranmid",
+    "pl_bmasse",
+    "pl_rade",
+    "pl_orbincl",
+    "st_mass",
+):
+    COLUMNS += [
+        (_base, "float"),
+        (_base + "err1", "float"),
+        (_base + "err2", "float"),
+        (_base + "lim", "int"),
+        (_base + "_reflink", "str"),
+    ]
+COLUMNS += [("pl_bmassprov", "str")]
+COLUMN_NAMES = [c for c, _ in COLUMNS]
+_TYPES = dict(COLUMNS)
+
+
+class ArchiveError(RuntimeError):
+    """The archive could not be queried."""
+
+
+def _clean(value: Any, kind: str) -> Any:
+    """Convert one table cell to a plain Python value (None if missing)."""
+    if value is None:
+        return None
+    if hasattr(value, "mask") and bool(getattr(value, "mask", False)):
+        return None
+    if hasattr(value, "unit") and hasattr(value, "value"):  # astropy Quantity
+        value = value.value
+    if kind == "str":
+        s = str(value).strip()
+        return s or None
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(x):
+        return None
+    return int(x) if kind == "int" else x
+
+
+def rows_from_table(table: Any) -> list[Row]:
+    """Rows from an astropy table returned by astroquery (or any table with named columns)."""
+    names = set(table.colnames)
+    missing = [c for c in COLUMN_NAMES if c not in names]
+    if missing:
+        raise ArchiveError(f"archive response lacks columns {missing}")
+    return [{c: _clean(r[c], _TYPES[c]) for c in COLUMN_NAMES} for r in table]
+
+
+def fetch_rows(where: str = MULTI_PLANET_WHERE, *, attempts: int = 3, pause: float = 2.0) -> list[Row]:
+    """Query ``pscomppars`` for all planets matching ``where`` (retrying transient network errors)."""
+    from astroquery.ipac.nexsci.nasa_exoplanet_archive import NasaExoplanetArchive
+
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            table = NasaExoplanetArchive.query_criteria(
+                table=TABLE, select=",".join(COLUMN_NAMES), where=where, cache=False
+            )
+            return rows_from_table(table)
+        except Exception as exc:  # network errors surface as many different exception types
+            last = exc
+            if i + 1 < attempts:
+                time.sleep(pause * (i + 1))
+    raise ArchiveError(f"could not query the NASA Exoplanet Archive: {type(last).__name__}: {last}") from last
+
+
+def write_csv(rows: Iterable[Row], path: Path) -> None:
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=COLUMN_NAMES)
+        w.writeheader()
+        for r in rows:
+            w.writerow({c: ("" if r.get(c) is None else r[c]) for c in COLUMN_NAMES})
+
+
+def read_csv(source: Path | str) -> list[Row]:
+    """Read rows written by :func:`write_csv` (or a TAP ``format=csv`` response with these columns)."""
+    text = source.read_text(encoding="utf-8") if isinstance(source, Path) else source
+    reader = csv.DictReader(io.StringIO(text))
+    fields = set(reader.fieldnames or [])
+    missing = [c for c in COLUMN_NAMES if c not in fields]
+    if missing:
+        raise ArchiveError(f"table file lacks columns {missing}")
+    return [{c: _clean(r[c] if r[c] != "" else None, _TYPES[c]) for c in COLUMN_NAMES} for r in reader]
+
+
+def group_by_host(rows: Sequence[Row]) -> dict[str, list[Row]]:
+    hosts: dict[str, list[Row]] = {}
+    for r in rows:
+        hosts.setdefault(str(r["hostname"]), []).append(r)
+    return hosts

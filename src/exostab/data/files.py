@@ -1,0 +1,294 @@
+"""User-supplied systems in YAML.
+
+A value can be a number, or a mapping with ``value`` and optional ``err`` (symmetric), ``err_plus`` /
+``err_minus`` (asymmetric), ``upper_limit: true`` and ``reference``. Units are part of the key names.
+See ``examples/two_planet.yaml`` for a complete example::
+
+    name: My system
+    epoch_jd: 2460000.0            # optional; epoch of mean anomalies / mean longitudes
+    star:
+      name: My star
+      mass_msun: {value: 1.0, err: 0.05}
+    planets:
+      - name: My star b
+        period_days: 100.0           # or semimajor_axis_au
+        mass_earth: {value: 30, err: 3}   # or mass_jupiter / mass_msun, or radius_earth only
+        mass_kind: true              # true | minimum | estimated
+        eccentricity: {value: 0.05, err: 0.02}
+        omega_deg: 90                # argument of periastron
+        mean_longitude_deg: 10       # or mean_anomaly_deg / transit_time_jd / periastron_time_jd
+
+Missing values follow the same completion rules as archive data (:mod:`exostab.data.completion`).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from ..models import (
+    CompletionFlag,
+    DataSource,
+    MassKind,
+    Phase,
+    PhaseKind,
+    Planet,
+    Provenance,
+    Star,
+    System,
+    Value,
+)
+from ..units import MEARTH_IN_MSUN, MJUP_IN_MEARTH, period_from_semimajor_axis, years_to_days
+from .completion import IncompleteSystemError, coplanar_flag
+from .massradius import MassRadiusError, mass_from_radius
+
+
+class SystemFileError(ValueError):
+    """The YAML file does not describe a valid system."""
+
+
+_PLANET_KEYS = {
+    "name",
+    "period_days",
+    "semimajor_axis_au",
+    "mass_earth",
+    "mass_jupiter",
+    "mass_msun",
+    "radius_earth",
+    "mass_kind",
+    "eccentricity",
+    "omega_deg",
+    "mean_anomaly_deg",
+    "mean_longitude_deg",
+    "transit_time_jd",
+    "periastron_time_jd",
+    "reference",
+}
+_PHASE_KEYS = {
+    "mean_anomaly_deg": PhaseKind.MEAN_ANOMALY,
+    "mean_longitude_deg": PhaseKind.MEAN_LONGITUDE,
+    "transit_time_jd": PhaseKind.TRANSIT,
+    "periastron_time_jd": PhaseKind.PERIASTRON,
+}
+
+
+def _value(raw: Any, *, scale: float = 1.0, reference: str | None = None, where: str = "") -> Value:
+    if isinstance(raw, bool) or raw is None:
+        raise SystemFileError(f"{where}: expected a number or a mapping, got {raw!r}")
+    if isinstance(raw, (int, float)):
+        return Value(value=float(raw) * scale, reference=reference)
+    if not isinstance(raw, dict):
+        raise SystemFileError(f"{where}: expected a number or a mapping, got {raw!r}")
+    unknown = set(raw) - {"value", "err", "err_plus", "err_minus", "upper_limit", "reference"}
+    if unknown:
+        raise SystemFileError(f"{where}: unknown keys {sorted(unknown)}")
+    if "value" not in raw:
+        raise SystemFileError(f"{where}: missing 'value'")
+    err_p = raw.get("err_plus", raw.get("err"))
+    err_m = raw.get("err_minus", raw.get("err"))
+    try:
+        return Value(
+            value=float(raw["value"]) * scale,
+            err_plus=None if err_p is None else abs(float(err_p)) * scale,
+            err_minus=None if err_m is None else abs(float(err_m)) * scale,
+            provenance=Provenance.UPPER_LIMIT if raw.get("upper_limit") else Provenance.MEASURED,
+            reference=raw.get("reference", reference),
+        )
+    except (TypeError, ValueError) as exc:
+        raise SystemFileError(f"{where}: {exc}") from exc
+
+
+def _flag(planet: str | None, parameter: str, rule: str, message: str) -> CompletionFlag:
+    return CompletionFlag(planet=planet, parameter=parameter, rule=rule, message=message)
+
+
+def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx: int) -> Planet:
+    name = str(raw.get("name") or f"planet {idx + 1}")
+    unknown = set(raw) - _PLANET_KEYS
+    if unknown:
+        raise SystemFileError(f"{name}: unknown keys {sorted(unknown)}")
+    ref = raw.get("reference")
+
+    # mass
+    mass_keys = [k for k in ("mass_earth", "mass_jupiter", "mass_msun") if k in raw]
+    if len(mass_keys) > 1:
+        raise SystemFileError(f"{name}: give only one of {mass_keys}")
+    radius = (
+        _value(raw["radius_earth"], reference=ref, where=f"{name}.radius_earth")
+        if "radius_earth" in raw
+        else None
+    )
+    kind_raw = raw.get("mass_kind", "true")
+    try:
+        kind = MassKind(str(kind_raw).lower())
+    except ValueError as exc:
+        raise SystemFileError(f"{name}: mass_kind must be true, minimum or estimated") from exc
+    if mass_keys:
+        scale = {"mass_earth": 1.0, "mass_jupiter": MJUP_IN_MEARTH, "mass_msun": 1 / MEARTH_IN_MSUN}[
+            mass_keys[0]
+        ]
+        mass = _value(raw[mass_keys[0]], scale=scale, reference=ref, where=f"{name}.{mass_keys[0]}")
+        if kind is MassKind.MINIMUM:
+            flags.append(
+                _flag(
+                    name,
+                    "mass",
+                    "minimum_mass",
+                    "Only the minimum mass m sin i is known; it is used as the mass (sin i = 1) unless "
+                    "--inclination-prior is set.",
+                )
+            )
+    elif radius is not None:
+        try:
+            m = mass_from_radius(radius.require())
+        except MassRadiusError as exc:
+            raise IncompleteSystemError(f"{name}: no mass given and {exc}") from exc
+        mass, kind = (
+            Value(value=m, provenance=Provenance.ESTIMATED, reference="Chen & Kipping 2017"),
+            MassKind.ESTIMATED,
+        )
+        flags.append(
+            _flag(
+                name,
+                "mass",
+                "mass_from_radius_chen_kipping",
+                f"Mass not given; estimated as {m:.3g} Earth masses from R = {radius.value:g} Earth radii "
+                "with the Chen & Kipping (2017) mass-radius relation.",
+            )
+        )
+    else:
+        raise IncompleteSystemError(
+            f"{name}: give a mass (mass_earth, mass_jupiter or mass_msun) or radius_earth"
+        )
+    if mass.provenance is Provenance.UPPER_LIMIT:
+        flags.append(
+            _flag(
+                name,
+                "mass",
+                "mass_upper_limit",
+                "Only an upper limit is given; the nominal run uses the limit, draws are uniform below it.",
+            )
+        )
+
+    # period
+    if "period_days" in raw:
+        period = _value(raw["period_days"], reference=ref, where=f"{name}.period_days")
+    elif "semimajor_axis_au" in raw:
+        a = _value(raw["semimajor_axis_au"], reference=ref, where=f"{name}.semimajor_axis_au")
+        P = years_to_days(period_from_semimajor_axis(a.require(), m_star + mass.require() * MEARTH_IN_MSUN))
+        rel = 0.5 * ((a.err_plus or 0) + (a.err_minus or 0)) / a.require()
+        err = 1.5 * rel * P if a.has_errors else None
+        period = Value(value=P, err_plus=err, err_minus=err, provenance=Provenance.DERIVED, reference=ref)
+        flags.append(
+            _flag(
+                name,
+                "period",
+                "period_from_semimajor_axis",
+                f"Period derived from a = {a.value:g} AU with Kepler's third law ({P:.4g} d).",
+            )
+        )
+    else:
+        raise IncompleteSystemError(f"{name}: give period_days or semimajor_axis_au")
+
+    # eccentricity and argument of periastron
+    if "eccentricity" in raw:
+        ecc = _value(raw["eccentricity"], reference=ref, where=f"{name}.eccentricity")
+        if ecc.provenance is Provenance.UPPER_LIMIT:
+            flags.append(
+                _flag(
+                    name,
+                    "eccentricity",
+                    "eccentricity_upper_limit",
+                    "Only an upper limit is given; the nominal run uses the limit, draws are uniform below it.",
+                )
+            )
+    else:
+        ecc = Value(value=0.0, provenance=Provenance.ASSUMED)
+        flags.append(
+            _flag(name, "eccentricity", "eccentricity_assumed_zero", "Eccentricity not given; assumed 0.")
+        )
+    if "omega_deg" in raw:
+        omega = _value(raw["omega_deg"], reference=ref, where=f"{name}.omega_deg")
+    else:
+        omega = Value(provenance=Provenance.RANDOMIZED)
+        flags.append(
+            _flag(
+                name,
+                "omega",
+                "omega_randomized",
+                "Argument of periastron not given; drawn uniformly in [0, 360) deg for every run.",
+            )
+        )
+
+    # phase
+    given = [k for k in _PHASE_KEYS if k in raw]
+    if len(given) > 1:
+        raise SystemFileError(f"{name}: give at most one of {given}")
+    if given:
+        phase = Phase(
+            kind=_PHASE_KEYS[given[0]], value=_value(raw[given[0]], reference=ref, where=f"{name}.{given[0]}")
+        )
+    else:
+        phase = Phase(kind=PhaseKind.RANDOM)
+        flags.append(
+            _flag(
+                name, "phase", "phase_randomized", "Orbital phase not given; drawn uniformly for every run."
+            )
+        )
+    try:
+        return Planet(
+            name=name,
+            period_days=period,
+            mass_earth=mass,
+            mass_kind=kind,
+            eccentricity=ecc,
+            omega_deg=omega,
+            phase=phase,
+            radius_earth=radius,
+        )
+    except ValueError as exc:
+        raise SystemFileError(str(exc)) from exc
+
+
+def load_system_file(path: str | Path) -> System:
+    """Read a system from a YAML file."""
+    p = Path(path)
+    try:
+        raw = yaml.safe_load(p.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SystemFileError(f"cannot read {p}: {exc}") from exc
+    except yaml.YAMLError as exc:
+        raise SystemFileError(f"{p} is not valid YAML: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise SystemFileError(f"{p}: the top level must be a mapping")
+    unknown = set(raw) - {"name", "epoch_jd", "star", "planets", "notes"}
+    if unknown:
+        raise SystemFileError(f"{p}: unknown top-level keys {sorted(unknown)}")
+    star_raw = raw.get("star")
+    if not isinstance(star_raw, dict) or "mass_msun" not in star_raw:
+        raise SystemFileError(f"{p}: 'star' must be a mapping with 'mass_msun'")
+    star_mass = _value(star_raw["mass_msun"], where="star.mass_msun")
+    name = str(raw.get("name") or p.stem)
+    star = Star(name=str(star_raw.get("name") or name), mass_msun=star_mass)
+    planets_raw = raw.get("planets")
+    if not isinstance(planets_raw, list) or len(planets_raw) < 2:
+        raise SystemFileError(f"{p}: 'planets' must be a list of at least two planets")
+    flags: list[CompletionFlag] = []
+    planets = []
+    for i, pr in enumerate(planets_raw):
+        if not isinstance(pr, dict):
+            raise SystemFileError(f"{p}: planet {i + 1} must be a mapping")
+        planets.append(_planet(pr, star_mass.require(), flags, i))
+    planets.sort(key=lambda q: q.period_days.require())
+    flags.append(coplanar_flag())
+    epoch = raw.get("epoch_jd")
+    return System(
+        name=name,
+        star=star,
+        planets=tuple(planets),
+        epoch_jd=float(epoch) if epoch is not None else None,
+        source=DataSource(kind="file", path=str(p), note=str(raw["notes"]) if raw.get("notes") else None),
+        flags=tuple(flags),
+    )

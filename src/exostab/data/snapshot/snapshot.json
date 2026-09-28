@@ -1,0 +1,33 @@
+{
+  "retrieved_utc": "2026-09-28T13:57:30+00:00",
+  "table": "pscomppars",
+  "service": "https://exoplanetarchive.ipac.caltech.edu/TAP",
+  "where": "sy_pnum >= 2",
+  "systems": [
+    "TRAPPIST-1",
+    "HD 127195",
+    "GJ 876",
+    "Kepler-11",
+    "HD 10180",
+    "55 Cnc",
+    "Kepler-36",
+    "Kepler-223",
+    "TOI-178",
+    "HR 8799",
+    "K2-138",
+    "Kepler-80",
+    "HD 219134",
+    "GJ 667 C",
+    "ups And",
+    "HD 82943",
+    "Kepler-9",
+    "WASP-47",
+    "Kepler-51",
+    "TOI-270",
+    "L 98-59",
+    "Kepler-47"
+  ],
+  "n_systems": 22,
+  "n_rows": 96,
+  "note": "Subset of the pscomppars table (all planets of each listed host) for offline tests and demos. Regenerate with scripts/make_snapshot.py."
+}

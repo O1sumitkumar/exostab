@@ -1,0 +1,30 @@
+# HD 127195 with the inputs of the Research Note
+#   Oz (2026), "N-body Stability Constraints on the Two Giant Planets of the Red Giant HD 127195"
+#   code: https://github.com/mimitoz62/hd127195-stability (paper_analysis.py, BEST and ERR)
+# Orbital solution from Figueira et al. (2026, A&A 712, A143), Table 2 (angles given there in radians)
+# and text; mean longitudes read from their Fig. C.2; stellar mass from Ottoni et al. (2022, A&A 657, A87).
+# Angles are converted from radians to degrees here (value in radians in the comment).
+# Uncertainties: asymmetric errors of the Note replaced by their mean, as in paper_analysis.py.
+name: HD 127195 (Research Note inputs)
+notes: >-
+  Inputs of the HD 127195 Research Note (paper_analysis.py). Mean longitudes at a common, unspecified epoch.
+star:
+  name: HD 127195
+  mass_msun: {value: 1.34, err: 0.06}
+planets:
+  - name: HD 127195 b
+    period_days: {value: 534.50, err: 2.885}
+    mass_jupiter: {value: 0.67, err: 0.09}        # m sin i; error from the RV semi-amplitude (13%)
+    mass_kind: minimum
+    eccentricity: {value: 0.04, err: 0.04}
+    omega_deg: {value: 177.6169164905552, err: 111.72677005051052}   # 3.10 +- 1.95 rad
+    mean_longitude_deg: {value: 246.9448097013848, err: 8.594366926962348}   # 4.31 +- 0.15 rad
+    reference: Figueira et al. 2026
+  - name: HD 127195 c
+    period_days: {value: 836.99, err: 9.51}
+    mass_jupiter: {value: 0.65, err: 0.10}        # m sin i; error from the RV semi-amplitude (15%)
+    mass_kind: minimum
+    eccentricity: {value: 0.05, err: 0.045}
+    omega_deg: {value: 236.05861159389917, err: 104.27831871380982}  # 4.12 +- 1.82 rad
+    mean_longitude_deg: {value: 57.29577951308232, err: 8.594366926962348}   # 1.00 +- 0.15 rad
+    reference: Figueira et al. 2026
