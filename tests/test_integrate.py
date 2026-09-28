@@ -31,7 +31,9 @@ def test_build_simulation_units_and_exit_conditions() -> None:
     assert sim.G == pytest.approx(4 * math.pi**2, rel=1e-4)  # yr, AU, Msun
     assert sim.integrator.name in (b"whfast", "whfast")  # REBOUND 5 returns bytes
     assert sim.dt == pytest.approx(0.1 / 30)
-    assert sim.exit_min_distance == pytest.approx(min(hill_radii(r)))
+    assert sim.collision == "line"
+    assert [p.r for p in sim.particles[1:]] == pytest.approx([0.5 * h for h in hill_radii(r)])
+    assert sim.particles[0].r == 0
     assert sim.exit_max_distance == pytest.approx(100 * sim.particles[2].a)
     assert sim.particles[1].P == pytest.approx(0.1)
     # mean longitude = pomega + M (Omega = 0 in the coplanar frame)

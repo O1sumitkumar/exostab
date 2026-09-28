@@ -48,14 +48,14 @@ Hill radii, matching the Note's 3.30–3.35.
 |---|---|---|---|---|---|---|---|
 | TRAPPIST-1 | archive snapshot | marginal | stable | marginal | **marginal** | 2.171 / 2.169 | 18 / 2 / 0 |
 | GJ 876 | Rivera et al. (2010) coplanar fit | unstable | marginal | stable | **marginal** | 1.993 / 1.995 | 20 / 0 / 0 |
-| GJ 876 | archive snapshot (random phases) | unstable | marginal | marginal | **marginal** | 3.980 / 3.762 | 3 / 6 / 10 (1 inconclusive) |
+| GJ 876 | archive snapshot (random phases) | unstable | marginal | marginal | **marginal** | 3.980 / 3.762 | 3 / 5 / 12 |
 | Kepler-11 | archive snapshot | marginal | marginal | marginal | **marginal** | 1.786 / 1.786 | 10 / 8 / 2 |
 
 What the tests require (from the project brief) and why:
 
 - **TRAPPIST-1**, a resonant chain: stable or marginal, never unstable. ✔
 - **GJ 876**, in a Laplace resonance: expected stable. The archive does not provide usable orbital phases for
-  GJ 876, and with random phases the resonance is destroyed (10 of 20 draws have close encounters). The test
+  GJ 876, and with random phases the resonance is destroyed (12 of 20 draws have close encounters). The test
   therefore uses the published four-planet solution of Rivera et al. (2010, Table 3), with its mean anomalies,
   and requires the **N-body** verdict to be stable ✔. The Hill and AMD criteria are only sufficient conditions,
   and they fail for this resonance-protected system. By design, the conservative overall verdict is therefore

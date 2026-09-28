@@ -16,8 +16,12 @@ Set-up (justified choices; see also DECISIONS.md):
 * IAS15 (Rein & Spiegel 2015), an adaptive high-order integrator, repeats the nominal run as an
   independent check; it does not rely on a fixed timestep and handles close approaches accurately.
 * MEGNO (Cincotta & Simo 2000) is computed from REBOUND's variational equations (Rein & Tamayo 2016).
-* A run stops early with a *close encounter* when any two bodies come closer than the smallest
-  planetary Hill radius a_k (m_k / 3 M_*)^(1/3) (the Research Note's rule), and with an *escape* when a
+* A run stops early with a *close encounter* when two planets come closer than the mean of their Hill
+  radii, (R_H,j + R_H,k) / 2 with R_H,k = a_k (m_k / 3 M_*)^(1/3). This uses REBOUND's collision detection
+  ("line" mode, which also catches passages between two steps) with each planet given a radius of half its
+  Hill radius. For two similar planets this equals the HD 127195 Research Note's rule (the smaller Hill
+  radius); unlike a single global distance, it also works when the system contains a much smaller planet
+  (DECISIONS.md, D20). The run stops with an *escape* when a
   body moves farther than ``escape_factor`` (default 100) times the largest semi-major axis from the
   centre of mass.
 * The relative energy error |E(t) - E(0)| / |E(0)| is measured at every sample and at the end; the
@@ -85,6 +89,15 @@ def timestep(real: Realization, dt_fraction: float) -> float:
     return dt_fraction * min(pericentre_timescale(b.P, b.e) for b in real.bodies)
 
 
+ENCOUNTER_HILL_FRACTION = 0.5  # collision radius of a planet, as a fraction of its Hill radius
+
+
+def encounter_distance(real: Realization) -> float:
+    """Smallest close-encounter distance over adjacent pairs, (R_H,j + R_H,k) / 2, in AU (for reports)."""
+    r = hill_radii(real)
+    return min(ENCOUNTER_HILL_FRACTION * (r[k] + r[k + 1]) for k in range(len(r) - 1))
+
+
 def hill_radii(real: Realization) -> list[float]:
     a = real.semi_major_axes()
     return [float(a[k]) * (b.m / (3 * real.m_star)) ** (1 / 3) for k, b in enumerate(real.bodies)]
@@ -102,7 +115,10 @@ def build_simulation(real: Realization, config: RunConfig) -> rebound.Simulation
     sim.integrator = config.integrator
     if config.integrator == "whfast":
         sim.dt = timestep(real, config.dt_fraction)
-    sim.exit_min_distance = min(hill_radii(real))
+    for k, rh in enumerate(hill_radii(real)):
+        sim.particles[k + 1].r = ENCOUNTER_HILL_FRACTION * rh
+    sim.collision = "line"
+    sim.collision_resolve = "halt"
     sim.exit_max_distance = config.escape_factor * max(p.a for p in sim.particles[1:])
     return sim
 
@@ -147,7 +163,7 @@ def run(real: Realization, config: RunConfig) -> RunResult:
             # change the trajectory of a fixed-step integrator.
             sim.integrate(tc, exact_finish_time=0)
             sample()
-    except rebound.Encounter:
+    except (rebound.Collision, rebound.Encounter):
         status = "encounter"
     except rebound.Escape:
         status = "escape"
@@ -175,7 +191,7 @@ def run(real: Realization, config: RunConfig) -> RunResult:
         lyapunov=lyap,
         energy_error=max_err,
         walltime=time.perf_counter() - t_wall,
-        encounter_distance=float(sim.exit_min_distance),
+        encounter_distance=encounter_distance(real),
         n_orbits_innermost=float(sim.t) / min(periods),
         n_orbits_outermost=float(sim.t) / max(periods),
         series=series if config.n_samples else {},

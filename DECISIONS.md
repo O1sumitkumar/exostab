@@ -78,7 +78,7 @@ set, which needs Mehmet's approval.
 | Timestep | 1/30 of the shortest pericentre-passage timescale T_p = P (1−e)^{3/2}/(1+e)^{1/2} | Wisdom (2015) found T_p/20 adequate (as restated by Hadden & Lithwick 2018, who used 1/30); equals P_min/30 for circular orbits (Note's choice, finer than the brief's P_min/20) |
 | Cross-check | IAS15 repeats the nominal run with MEGNO; disagreement prevents a "stable" N-body verdict | Brief |
 | Run length | 1e4 orbits of the innermost planet (`--orbits`) | Brief. Reports state the horizon in years and never imply Gyr stability. If the outermost planet completes < 100 orbits the N-body verdict cannot be "stable" |
-| Close encounter | separation below the smallest planetary Hill radius a_k (m_k/3M_*)^{1/3} (REBOUND `exit_min_distance`, all pairs) | Research Note's rule |
+| Close encounter | two planets closer than the mean of their Hill radii, (R_H,j + R_H,k)/2 (REBOUND collision detection, "line" mode) | Changed from the Research Note's global rule, see D20 |
 | Escape | distance from the centre of mass above 100 × the largest semi-major axis | Research Note's rule |
 | MEGNO threshold | ⟨Y⟩ ≥ 2.2 is chaotic | See below |
 | Energy-error limit | maximum relative energy error over the run (sampled 400 times for the nominal run, at the end for draws) > 1e-5 → run "inconclusive" | See below |
@@ -221,7 +221,7 @@ and cross-checked numerically in the tests. Differences from the brief:
 - TRAPPIST-1 "stable or marginal, never unstable": overall verdict in {stable, marginal} and N-body verdict
   not unstable, from the archive snapshot. Measured: marginal.
 - GJ 876 "stable": the archive has no usable phases for GJ 876 (D9), and with random phases the Laplace
-  resonance is destroyed (archive run: 10 of 20 draws have close encounters). The test therefore uses the
+  resonance is destroyed (archive run: 12 of 20 draws have close encounters). The test therefore uses the
   Rivera et al. (2010) coplanar solution with its mean anomalies (`tests/validation/systems/`) and requires
   the **N-body** verdict to be stable (measured: 20/20 draws regular, ⟨Y⟩ = 1.99). The Hill and AMD criteria
   fail for this resonance-protected system, so the overall verdict is "marginal" by design (D15).
@@ -264,4 +264,17 @@ below the cheapest preset (a warning is printed instead). The IAS15 check is now
 the longest single job. Measured on TRAPPIST-1: "fast" chose (1e4, 20), estimated 8 s, took 7.8 s; "thorough"
 chose (1e5, 100), estimated 90 s, took 82 s. Because the choice depends on the machine, `report.json` records the
 chosen orbits and draws and the budget; repeating with `--orbits/--draws/--seed` reproduces the run exactly.
+
+## D20 — Close encounters are detected per pair of planets (2026-09-28)
+
+Until now a run stopped when any two bodies came closer than the smallest planetary Hill radius (the Research
+Note's rule, a single REBOUND `exit_min_distance`). The full catalog run showed the flaw: in K2-157 the
+ultra-short-period Earth-mass planet has a Hill radius of 1e-4 AU, so the two outer giants passed within
+0.0085 AU of each other (inside planet d's Hill radius) without stopping the run, and WHFast then lost accuracy
+(relative energy error 5%). Now each planet gets a REBOUND collision radius of half its Hill radius, with
+"line" collision detection (which also catches passages between two steps) and `collision_resolve = "halt"`.
+A close encounter is therefore two planets closer than the mean of their Hill radii. For two similar planets
+this is the Note's rule. Effects on the validation set: none, except GJ 876 with random archive phases, where one
+formerly "inconclusive" draw is now a close encounter (3 / 5 / 12 instead of 3 / 6 / 10 + 1). Measured cost:
+none.
 

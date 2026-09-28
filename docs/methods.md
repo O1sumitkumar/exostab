@@ -98,7 +98,7 @@ Each run is classified as:
 
 - **regular**: no close encounter or escape, and ⟨Y⟩ < 2.2;
 - **chaotic**: no close encounter or escape, but ⟨Y⟩ ≥ 2.2;
-- **unstable**: two bodies came closer than the smallest planetary Hill radius, or a planet moved beyond 100 times
+- **unstable**: two planets came closer than the mean of their Hill radii, or a planet moved beyond 100 times
   the largest orbit;
 - **inconclusive**: the relative energy error exceeded 10⁻⁵, so the numbers cannot be trusted.
 

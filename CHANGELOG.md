@@ -14,6 +14,8 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - The IAS15 check starts first, so long checks finish sooner.
+- Close encounters are detected for each pair of planets (closer than the mean of their Hill radii) with
+  REBOUND collision detection, instead of one global distance set by the smallest planet (DECISIONS.md, D20).
 
 ## [0.1.0] - unreleased
 
