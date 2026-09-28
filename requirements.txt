@@ -1,0 +1,4 @@
+# Used only by Streamlit Community Cloud to run the web app (streamlit_app.py); pip users install the package
+# with `pip install "exostab[web]"` instead. Community Cloud reads this file before pyproject.toml.
+streamlit==1.64.0
+.[web]

@@ -41,11 +41,18 @@ exostab check --from-file examples/two_planet.yaml          # your own parameter
 exostab sweep "HD 127195" --planet b --param e --range 0 0.6 --steps 25
 exostab list --min-planets 4 --max-period-days 200
 exostab catalog build --limit 50                            # batch catalog: catalog.csv + catalog.parquet
+exostab check "TRAPPIST-1" --budget thorough                # choose run length and draws for about 2 minutes
 ```
 
 `check` writes `report.json`, `orbits.png` and `megno.png`; `sweep` writes `sweep.csv`, `sweep.png` and
 `sweep.json`. Every run takes `--seed`, and the same seed gives the same draws. `exostab COMMAND --help` lists
 all options.
+
+## Web app
+
+`pip install "exostab[web]"` and `streamlit run streamlit_app.py` start a browser version: search a system,
+edit its parameters, try "what if" changes with sliders, choose a time budget, and download the report or a
+shareable link to the exact run. See [docs/web.md](docs/web.md).
 
 ## Example report card
 

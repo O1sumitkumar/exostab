@@ -21,6 +21,7 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - CLI reference: cli.md
+  - Web app: web.md
   - Methods: methods.md
   - Data and assumptions: data-assumptions.md
   - Validation: validation.md
