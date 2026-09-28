@@ -27,3 +27,8 @@ site/
 
 # OS
 .DS_Store
+
+# exostab outputs
+exostab-results/
+/catalog/
+/results/

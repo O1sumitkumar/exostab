@@ -1,0 +1,78 @@
+import math
+
+import pytest
+
+from exostab.integrate import RunConfig, build_simulation, hill_radii, pericentre_timescale, run, timestep
+from exostab.sampling import Body, Realization
+
+
+def pair(ratio: float = 2.5, m: float = 3e-5, e: tuple[float, float] = (0.0, 0.0)) -> Realization:
+    return Realization(
+        label="nominal",
+        m_star=1.0,
+        bodies=(Body("b", m, 0.1, e[0], 0.0, 0.0), Body("c", m, 0.1 * ratio, e[1], 1.0, math.pi)),
+    )
+
+
+def test_pericentre_timescale_and_timestep() -> None:
+    assert pericentre_timescale(1.0, 0.0) == 1.0
+    # 2 pi / (true-anomaly rate at pericentre)
+    e = 0.3
+    assert pericentre_timescale(2.0, e) == pytest.approx(2.0 * (1 - e) ** 1.5 / math.sqrt(1 + e))
+    r = pair(e=(0.0, 0.6))
+    # the eccentric outer planet sets the step, and the step never exceeds P_min / 20
+    assert timestep(r, 1 / 30) == pytest.approx(pericentre_timescale(0.25, 0.6) / 30)
+    assert timestep(pair(), 1 / 30) <= 0.1 / 20
+
+
+def test_build_simulation_units_and_exit_conditions() -> None:
+    r = pair()
+    sim = build_simulation(r, RunConfig())
+    assert sim.G == pytest.approx(4 * math.pi**2, rel=1e-4)  # yr, AU, Msun
+    assert sim.integrator.name in (b"whfast", "whfast")  # REBOUND 5 returns bytes
+    assert sim.dt == pytest.approx(0.1 / 30)
+    assert sim.exit_min_distance == pytest.approx(min(hill_radii(r)))
+    assert sim.exit_max_distance == pytest.approx(100 * sim.particles[2].a)
+    assert sim.particles[1].P == pytest.approx(0.1)
+    # mean longitude = pomega + M (Omega = 0 in the coplanar frame)
+    assert math.remainder(sim.particles[2].l - (math.pi + 1.0), 2 * math.pi) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_regular_run_conserves_energy_and_megno_near_two() -> None:
+    res = run(pair(), RunConfig(n_orbits=3000, n_samples=20, megno_seed=1))
+    assert res.status == "completed"
+    assert res.energy_error < 1e-6
+    assert res.megno == pytest.approx(2.0, abs=0.1)
+    assert res.n_orbits_innermost == pytest.approx(3000, rel=1e-3)
+    assert res.n_orbits_outermost == pytest.approx(1200, rel=1e-3)
+    assert len(res.series["t"]) == 21 and len(res.series["x0"]) == 21
+    assert res.dt == pytest.approx(0.1 / 30)
+
+
+def test_runs_are_deterministic() -> None:
+    a = run(pair(ratio=1.3), RunConfig(n_orbits=2000, megno_seed=5))
+    b = run(pair(ratio=1.3), RunConfig(n_orbits=2000, megno_seed=5))
+    assert a.megno == b.megno and a.energy_error == b.energy_error
+
+
+def test_close_encounter_is_detected() -> None:
+    res = run(pair(ratio=1.1, m=1e-4), RunConfig(n_orbits=5000))
+    assert res.status == "encounter"
+    assert res.t_end < res.t_target
+
+
+def test_escape_is_detected() -> None:
+    res = run(pair(ratio=1.25, m=3e-3), RunConfig(n_orbits=20000, escape_factor=1.6))
+    assert res.status in ("escape", "encounter")
+
+
+def test_ias15_run() -> None:
+    res = run(pair(), RunConfig(n_orbits=300, integrator="ias15"))
+    assert res.status == "completed" and res.dt is None
+    assert res.energy_error < 1e-12
+
+
+def test_no_megno_mode() -> None:
+    res = run(pair(), RunConfig(n_orbits=100, megno=False, n_samples=3))
+    assert res.megno is None and res.lyapunov is None
+    assert all(math.isnan(y) for y in res.series["megno"])
