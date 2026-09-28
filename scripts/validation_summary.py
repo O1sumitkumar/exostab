@@ -46,8 +46,8 @@ def main() -> None:
     from tests.validation.test_validation import inner_solar_system  # type: ignore[import-not-found]
 
     r = inner_solar_system()
-    wh = run(r, RunConfig(n_orbits=1e4 / r.bodies[0].P, n_samples=100))
-    ias = run(r, RunConfig(n_orbits=1e4 / r.bodies[0].P, integrator="ias15"))
+    wh = run(r, RunConfig(n_orbits=1e4 / r.bodies[0].P, n_samples=300))
+    ias = run(r, RunConfig(n_orbits=1e4 / r.bodies[0].P, integrator="ias15", n_samples=300))
     print(
         f"\n## inner Solar System, 1e4 yr\n  WHFast: energy error {wh.energy_error:.2e}, <Y> {wh.megno:.4f}, "
         f"dt {wh.dt * 365.25:.3f} d\n  IAS15: energy error {ias.energy_error:.2e}, <Y> {ias.megno:.4f}"

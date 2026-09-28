@@ -6,7 +6,10 @@ so it runs nightly in continuous integration and on demand:
 ```bash
 pytest -m slow
 python scripts/validation_summary.py   # prints the numbers below
+python scripts/validation_figures.py   # draws the figures below
 ```
+
+(Run the two scripts from the repository root with `PYTHONPATH=.`.)
 
 The numbers on this page were produced on 2026-09-28 by `scripts/validation_summary.py` with exostab 0.1.0.dev0,
 REBOUND 5.2.0, NumPy 2.5.3 and Python 3.12.11 on macOS (Apple M4 Pro). They use the bundled archive snapshot of
@@ -20,7 +23,9 @@ Sun, Mercury, Venus, Earth–Moon, Mars (approximate J2000 elements, coplanar), 
 | Integrator | Relative energy error | ⟨Y⟩ | Test tolerance |
 |---|---|---|---|
 | WHFast, dt = 1.89 d | 1.4 × 10⁻⁹ | 1.999 | < 10⁻⁷ |
-| IAS15 | 9.7 × 10⁻¹⁶ | 2.001 | < 10⁻¹² |
+| IAS15 | 4.9 × 10⁻¹⁵ | 2.001 | < 10⁻¹² |
+
+![Relative energy error of the inner Solar System with WHFast and IAS15 over 10,000 years](assets/validation/energy.png)
 
 ## 2. The Hill limit
 
@@ -31,6 +36,11 @@ Sun, Mercury, Venus, Earth–Moon, Mars (approximate J2000 elements, coplanar), 
   found encounters stop between 3.30 and 3.35.
 - A synthetic pair 2.5 mutual Hill radii apart gets the overall verdict **unstable** (Hill and N-body both
   unstable).
+
+![Fraction of starting phases with a close encounter against the initial separation, with the two Gladman limits](assets/validation/hill_limit.png)
+
+With a finer grid than the tests use, encounters happen in 75% of the runs at 3.3 and in none at 3.4 mutual
+Hill radii, matching the Note's 3.30–3.35.
 
 ## 3. Known systems
 
@@ -57,6 +67,8 @@ What the tests require (from the project brief) and why:
   sometimes make neighbouring orbits nearly cross. The N-body verdict is therefore marginal. This is reported as
   found.
 
+![GJ 876: final MEGNO of 20 draws with the published phases and with random phases](assets/validation/gj876.png)
+
 ## 4. The HD 127195 Research Note
 
 `examples/hd127195_note.yaml` holds the Note's inputs. The run uses the Note's settings: 20,000 orbits of
@@ -74,6 +86,8 @@ planet b, 200 draws, WHFast at P_b/30 and MEGNO < 2.2 regular; seed 42.
 | Draws passing the collision AMD test | 200 / 200 | 200 / 200 | all |
 | AMD limit, equal eccentricities | 0.148 | 0.1478 | ± 0.0005 |
 | Conclusion | best fit regular; a substantial part of the AMD-stable parameter space is chaotic | N-body: nominal stable, verdict marginal; overall marginal | exact |
+
+![HD 127195: counts of regular, chaotic and close-encounter draws, exostab against the Research Note](assets/validation/hd127195.png)
 
 The draws cannot match the Note one-to-one because the random number streams differ; the fractions agree within
 the statistical tolerance. exostab's AMD verdict for these inputs is *marginal*, not *stable*. exostab also
