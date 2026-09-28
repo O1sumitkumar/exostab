@@ -1,0 +1,42 @@
+# GJ 876: four-planet coplanar fit of Rivera et al. (2010, ApJ 719, 890), Table 3
+# ("Four-Planet coplanar fit for GJ 876 with i=59 deg"; arXiv:1006.4244, ms.tex lines 748-769).
+# Osculating Jacobi elements at the fit epoch; masses are true masses for i = 59 deg (inclination
+# fixed on a grid by the authors, nodes all 0). Stellar mass 0.32 Msun (their Sect. 2; its +-0.03
+# uncertainty is not propagated by the authors either). MA = mean anomaly at the epoch.
+# The paper does not state whether omega is the planet's or the star's; for a coplanar integration a
+# common convention for all planets only rotates the whole system, which does not change the dynamics.
+# Rivera et al. report this configuration stable for at least 300 Myr.
+name: GJ 876 (Rivera et al. 2010, coplanar i = 59 deg)
+epoch_jd: 2450602.093
+star:
+  name: GJ 876
+  mass_msun: 0.32
+planets:
+  - name: GJ 876 d
+    period_days: {value: 1.937780, err: 0.000020}
+    mass_earth: {value: 6.83, err: 0.40}
+    eccentricity: {value: 0.207, err: 0.055}
+    omega_deg: {value: 234, err: 20}
+    mean_anomaly_deg: {value: 355, err: 19}
+    reference: Rivera et al. 2010
+  - name: GJ 876 c
+    period_days: {value: 30.0881, err: 0.0082}
+    mass_jupiter: {value: 0.7142, err: 0.0039}
+    eccentricity: {value: 0.25591, err: 0.00093}
+    omega_deg: {value: 48.76, err: 0.70}
+    mean_anomaly_deg: {value: 294.59, err: 0.94}
+    reference: Rivera et al. 2010
+  - name: GJ 876 b
+    period_days: {value: 61.1166, err: 0.0086}
+    mass_jupiter: {value: 2.2756, err: 0.0045}
+    eccentricity: {value: 0.0324, err: 0.0013}
+    omega_deg: {value: 50.3, err: 3.2}
+    mean_anomaly_deg: {value: 325.7, err: 3.2}
+    reference: Rivera et al. 2010
+  - name: GJ 876 e
+    period_days: {value: 124.26, err: 0.70}
+    mass_earth: {value: 14.6, err: 1.7}
+    eccentricity: {value: 0.055, err: 0.012}
+    omega_deg: {value: 239, err: 22}
+    mean_anomaly_deg: {value: 335, err: 24}
+    reference: Rivera et al. 2010
