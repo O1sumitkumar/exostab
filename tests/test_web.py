@@ -20,6 +20,7 @@ from exostab.web import figures
 from exostab.web.state import (
     AppState,
     WhatIf,
+    _b64,
     apply_changes,
     decode_state,
     encode_state,
@@ -115,6 +116,43 @@ def test_decode_rejects_garbage() -> None:
     )
     assert decode_state({"budget": "1000"}).budget_s == 120
     assert decode_state({"orbits": "x", "draws": "1"}).orbits is None
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"seed": "-1"},  # numpy and the seed widget take only 0 ... 2**31 - 1
+        {"seed": "99999999999"},
+        {"budget": "nan"},  # nan passes min/max clamping
+        {"budget": "inf"},
+        {"edits": _b64({"Test b": {"eccentricity": float("nan")}})},
+        {"whatif": _b64({"planet": "Test b", "mass_factor": 4.0})},  # not a choice of the slider
+        {"whatif": _b64({"planet": "Test b", "eccentricity": 1.5})},
+        {"whatif": _b64({"planet": "Test c", "period_ratio": 0.5})},
+        {"orbits": "1e7", "draws": "500"},  # days of CPU time on a public server
+        {"orbits": "1e5", "draws": "101"},
+        {"orbits": "1.5e5", "draws": "10"},
+        {"orbits": "nan", "draws": "10"},
+    ],
+)
+def test_decode_falls_back_to_defaults(params: dict[str, str]) -> None:
+    assert decode_state({"system": "X", **params}) == AppState(system="X")
+
+
+def test_decode_accepts_the_longest_preset() -> None:
+    from exostab.budget import PRESETS
+
+    orbits, draws = PRESETS[-1]
+    s = decode_state({"orbits": f"{orbits:g}", "draws": str(draws), "seed": str(2**31 - 1), "budget": "inf"})
+    assert (s.orbits, s.draws, s.seed, s.budget_s) == (orbits, draws, 2**31 - 1, 10)
+
+
+@pytest.mark.parametrize("params", [{"seed": "-1"}, {"seed": "99999999999"}, {"budget": "nan"}])
+def test_app_survives_crafted_links(params: dict[str, str]) -> None:
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.query_params.update({"system": "Kepler-36", "source": "snapshot", **params})
+    at.run()
+    assert not at.exception, at.exception
 
 
 def test_input_hash_changes_with_any_input() -> None:
