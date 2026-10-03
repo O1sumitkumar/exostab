@@ -2,8 +2,13 @@
 
 Each system runs in its own process with a hard wall-clock cap (``max_seconds``). A system that exceeds
 the cap is recorded with ``status = timeout`` and no verdict, rather than being given a shorter run
-silently. Systems the completion rules cannot model (for example circumbinary planets, or a planet with
-neither a mass nor a radius) are recorded with ``status = skipped`` and the reason.
+silently. Systems the completion rules cannot model (for example circumbinary planets, a planet with
+neither a mass nor a radius, or a host with a single planet row because its other planets orbit a companion
+star) are recorded with ``status = skipped`` and the reason.
+
+Each row is computed by :func:`exostab.analysis.check_system`, the function behind ``exostab check``, so for
+the same system, run length, draws and seed the verdicts are those of ``exostab check``. The catalog keeps no
+time series for plots, which does not change any result (see :mod:`exostab.integrate`).
 """
 
 from __future__ import annotations
@@ -144,9 +149,9 @@ def build_catalog(
     console: Console | None = None,
 ) -> tuple[list[Path], list[dict[str, Any]]]:
     rows, info = load_rows(refresh=refresh, offline=offline)
-    hosts = sorted(
-        ((h, rs) for h, rs in group_by_host(rows).items() if len(rs) >= 2), key=lambda x: x[0].lower()
-    )
+    # Every host of the table (sy_pnum >= 2) gets a row: a host with a single planet row, whose other planets
+    # orbit a companion star, is recorded as skipped with the reason, like any other system exostab cannot model.
+    hosts = sorted(group_by_host(rows).items(), key=lambda x: x[0].lower())
     if limit:
         hosts = hosts[:limit]
     n_workers = settings.jobs or max(1, (os.cpu_count() or 2) - 1)
