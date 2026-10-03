@@ -11,6 +11,7 @@ import csv
 import json
 import math
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,11 @@ PARAM_LABELS = {
     "period": "orbital period (days)",
     "omega": "argument of periastron (deg)",
 }
+
+
+def _run_config(orbits: float) -> RunConfig:
+    """Integration settings of every run of a sweep (WHFast with the default time step)."""
+    return RunConfig(n_orbits=orbits)
 
 
 def check_value(param: str, value: float) -> None:
@@ -77,7 +83,7 @@ def run_sweep(
     index = [b.name for b in nominal.bodies].index(target)
     values = np.linspace(value_range[0], value_range[1], steps)
     reals = [_modified(nominal, index, param, float(v)) for v in values]
-    config = RunConfig(n_orbits=orbits)
+    config = _run_config(orbits)
     runs = run_many([(r, replace(config, megno_seed=megno_seed(seed, 0))) for r in reals], jobs)
     rows = []
     for v, r, res in zip(values, reals, runs, strict=True):
@@ -104,18 +110,40 @@ def run_sweep(
 
 
 def write_sweep(
-    rows: list[dict[str, Any]], system: System, planet: str, param: str, out_dir: Path
+    rows: list[dict[str, Any]],
+    system: System,
+    planet: str,
+    param: str,
+    out_dir: Path,
+    *,
+    value_range: tuple[float, float],
+    steps: int,
+    orbits: float,
+    seed: int,
+    command: str | None = None,
 ) -> list[Path]:
+    """sweep.csv (one row per value), sweep.json (everything needed to repeat the sweep) and sweep.png."""
     csv_path = out_dir / "sweep.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)
+    config = _run_config(orbits)
     meta = {
+        "created_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "command": command,
         "system": system.name,
         "planet": system.planet(planet).name,
         "parameter": param,
         "unit": PARAM_LABELS[param],
+        "settings": {
+            "value_range": list(value_range),
+            "steps": steps,
+            "orbits": orbits,  # N-body run length, in orbits of the innermost planet
+            "seed": seed,  # fixes the randomized angles held throughout the sweep and the MEGNO seed
+            "integrator": config.integrator,
+            "dt_fraction": config.dt_fraction,
+        },
         "flags": [f.model_dump() for f in system.flags],
         "software": software_record().model_dump(),
         "source": system.source.model_dump(),

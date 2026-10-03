@@ -298,7 +298,18 @@ def sweep(
         rows = run_sweep(system, planet, param.value, value_range, steps, orbits=orbits, seed=seed, jobs=jobs)
     out_dir = out or Path("exostab-results") / slug(system.name)
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths = write_sweep(rows, system, planet, param.value, out_dir)
+    paths = write_sweep(
+        rows,
+        system,
+        planet,
+        param.value,
+        out_dir,
+        value_range=value_range,
+        steps=steps,
+        orbits=orbits,
+        seed=seed,
+        command=_command(),
+    )
     t = Table(title=f"{system.name}: sweep of {param.value} for planet {planet}", header_style="bold")
     for col in ("value", "N-body", "<Y>", "Hill", "AMD"):
         t.add_column(col)

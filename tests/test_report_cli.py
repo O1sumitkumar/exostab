@@ -262,35 +262,48 @@ def test_list_command() -> None:
     assert r.exit_code == 0 and "more; use --limit 0" in r.output
 
 
-def test_sweep_command(tmp_path: Path) -> None:
-    r = runner.invoke(
-        app,
-        [
-            "sweep",
-            "--from-file",
-            str(EXAMPLES / "hd127195_note.yaml"),
-            "--planet",
-            "b",
-            "--param",
-            "e",
-            "--range",
-            "0",
-            "0.6",
-            "--steps",
-            "4",
-            "--orbits",
-            "200",
-            "--jobs",
-            "1",
-            "--out",
-            str(tmp_path),
-        ],
-    )
+def test_sweep_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = [
+        "sweep",
+        "--from-file",
+        str(EXAMPLES / "hd127195_note.yaml"),
+        "--planet",
+        "b",
+        "--param",
+        "e",
+        "--range",
+        "0",
+        "0.6",
+        "--steps",
+        "4",
+        "--orbits",
+        "200",
+        "--seed",
+        "3",
+        "--jobs",
+        "1",
+        "--out",
+        str(tmp_path),
+    ]
+    monkeypatch.setattr("sys.argv", ["exostab", *args])
+    r = runner.invoke(app, args)
     assert r.exit_code == 0, r.output
     rows = list(csv.DictReader((tmp_path / "sweep.csv").open()))
     assert [float(x["value"]) for x in rows] == pytest.approx([0.0, 0.2, 0.4, 0.6])
     assert rows[-1]["hill_verdict"] == "unstable" and rows[0]["amd_verdict"] == "stable"
     assert (tmp_path / "sweep.png").exists() and (tmp_path / "sweep.json").exists()
+    # sweep.json records what is needed to repeat the sweep: the seed changes the N-body classifications
+    meta = json.loads((tmp_path / "sweep.json").read_text())
+    assert meta["settings"] == {
+        "value_range": [0.0, 0.6],
+        "steps": 4,
+        "orbits": 200.0,
+        "seed": 3,
+        "integrator": "whfast",
+        "dt_fraction": pytest.approx(1 / 30),
+    }
+    assert meta["command"].startswith("exostab sweep --from-file") and "--seed 3" in meta["command"]
+    assert meta["created_utc"] and meta["parameter"] == "e"
     r = runner.invoke(app, ["sweep", "HD 127195", "--planet", "z", "--steps", "2"])
     assert r.exit_code == 1 and "no planet" in r.output
 
