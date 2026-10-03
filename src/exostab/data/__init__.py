@@ -6,13 +6,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ..models import DataSource, System
+from ..models import DataSource, MassKind, System
 from .archive import TABLE, TAP_SERVICE, Row, group_by_host
 from .completion import (
     IncompleteSystemError,
     complete_planets,
     complete_star,
     coplanar_flag,
+    mass_kind,
     star_mass_row,
 )
 from .files import SystemFileError, load_system_file
@@ -101,7 +102,9 @@ def list_systems(
                 min_period_days=min(periods) if periods else None,
                 max_period_days=pmax,
                 star_mass_msun=None if star_row is None else star_row["st_mass"],
-                minimum_masses=sum(r.get("pl_bmassprov") == "Msini" for r in rs),
+                minimum_masses=sum(
+                    r.get("pl_bmasse") is not None and mass_kind(r) is MassKind.MINIMUM for r in rs
+                ),
                 estimated_masses=sum(
                     r.get("pl_bmassprov") == "M-R relationship" or r.get("pl_bmasse") is None for r in rs
                 ),

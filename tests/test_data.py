@@ -242,6 +242,24 @@ def test_mass_provenance(prov: str, kind: MassKind, rule: str | None) -> None:
         assert rule in {f.rule for f in s.flags}
 
 
+def test_mass_kind_uses_transit_and_limit_flags() -> None:
+    # A transiting planet has i close to 90 deg, so its archive "Msini" is its mass (Kepler-9 d: i = 89.38 deg);
+    # it must not be called a minimum mass or be scaled by the inclination prior while its siblings are not.
+    s = system_from_rows(pair(pl_bmassprov="Msini", tran_flag=1, pl_orbincl=89.38), INFO)
+    assert s.planets[1].mass_kind is MassKind.TRUE
+    c_flags = {f.rule: f.message for f in s.flags if f.planet == "Host c"}
+    assert "minimum_mass" not in c_flags and "89.38" in c_flags["msini_of_transiting_planet"]
+    # A lower limit on the mass of a non-transiting planet is an m sin i with unknown inclination
+    # (HD 219134 d and f); it is a minimum mass for the inclination prior, like its "Msini" siblings.
+    s = system_from_rows(pair(pl_bmasselim=-1), INFO)
+    assert s.planets[1].mass_kind is MassKind.MINIMUM
+    assert any(f.rule == "mass_lower_limit" and "minimum mass" in f.message for f in s.flags)
+    assert system_from_rows(pair(pl_bmasselim=-1, tran_flag=1), INFO).planets[1].mass_kind is MassKind.TRUE
+    # `exostab list` counts minimum masses by the same rule
+    rows = [row("Host b", pl_bmasselim=-1), row("Host c", pl_orbper=25.0, pl_bmassprov="Msini", tran_flag=1)]
+    assert list_systems(rows)[0].minimum_masses == 1
+
+
 def test_mass_from_radius_and_failures() -> None:
     s = system_from_rows(pair(pl_bmasse=None, pl_rade=2.0), INFO)
     assert s.planets[1].mass_kind is MassKind.ESTIMATED

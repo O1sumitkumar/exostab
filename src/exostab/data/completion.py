@@ -15,8 +15,9 @@ Period
 Mass
     ``pl_bmassprov`` says what the archive's mass is: "Mass" and "Msin(i)/sin(i)" are true masses;
     "Msini" is a minimum mass (used as the mass, i.e. sin i = 1, unless ``--inclination-prior`` is
-    given); "M-R relationship" was estimated by the archive from the radius ("estimated"). An upper limit
-    is used as the value in the nominal run. A missing mass is estimated from the radius with the
+    given), except for transiting planets, whose sin i is close to 1; a lower limit on the mass of a
+    non-transiting planet is a minimum mass; "M-R relationship" was estimated by the archive from the
+    radius ("estimated"). An upper limit is used as the value in the nominal run. A missing mass is estimated from the radius with the
     Chen & Kipping (2017) relation where that relation can be inverted.
 Eccentricity
     Missing -> 0 ("assumed"). Published as exactly 0 without an uncertainty -> also "assumed" and
@@ -242,6 +243,23 @@ _PROV = {
 }
 
 
+def mass_kind(row: Row) -> MassKind:
+    """What the published mass of an archive row means.
+
+    ``pl_bmassprov`` gives the kind, refined with two flags: a transiting planet (``tran_flag = 1``) has an
+    inclination close to 90 deg, so its "Msini" is its true mass; a lower limit (``pl_bmasselim = -1``) on the
+    mass of a non-transiting planet has an unknown inclination and is in practice an m sin i, so it is a
+    minimum mass (relevant for ``--inclination-prior``).
+    """
+    kind = _PROV.get(row.get("pl_bmassprov") or "Mass", MassKind.TRUE)
+    transiting = row.get("tran_flag") == 1
+    if kind is MassKind.MINIMUM and transiting:
+        return MassKind.TRUE
+    if kind is MassKind.TRUE and row.get("pl_bmasselim") == -1 and not transiting:
+        return MassKind.MINIMUM
+    return kind
+
+
 def _mass(row: Row, name: str, flags: list[CompletionFlag]) -> tuple[Value, MassKind]:
     if row.get("pl_bmasse") is None:
         radius = row.get("pl_rade")
@@ -264,13 +282,25 @@ def _mass(row: Row, name: str, flags: list[CompletionFlag]) -> tuple[Value, Mass
             value=m, provenance=Provenance.ESTIMATED, reference="Chen & Kipping 2017"
         ), MassKind.ESTIMATED
     prov_text = row.get("pl_bmassprov") or "Mass"
-    kind = _PROV.get(prov_text, MassKind.TRUE)
+    kind = mass_kind(row)
     value = _value(
         row,
         "pl_bmasse",
         provenance=Provenance.ESTIMATED if kind is MassKind.ESTIMATED else Provenance.MEASURED,
     )
-    if kind is MassKind.MINIMUM:
+    if prov_text == "Msini" and kind is MassKind.TRUE:
+        incl = row.get("pl_orbincl")
+        flags.append(
+            _flag(
+                name,
+                "pl_bmasse",
+                "msini_of_transiting_planet",
+                "The archive gives m sin i, but the planet transits"
+                + (f" (i = {incl:g} deg)" if incl is not None else "")
+                + ", so sin i is close to 1: used as the true mass, not scaled by --inclination-prior.",
+            )
+        )
+    elif kind is MassKind.MINIMUM and prov_text == "Msini":
         flags.append(
             _flag(
                 name,
@@ -308,6 +338,17 @@ def _mass(row: Row, name: str, flags: list[CompletionFlag]) -> tuple[Value, Mass
                 "mass_upper_limit",
                 f"Only an upper limit ({value.value:g} Earth masses) is published; the nominal run uses the "
                 "limit, draws are uniform below it.",
+            )
+        )
+    elif row.get("pl_bmasselim") == -1 and kind is MassKind.MINIMUM and prov_text != "Msini":
+        flags.append(
+            _flag(
+                name,
+                "pl_bmasse",
+                "mass_lower_limit",
+                "The mass is a lower limit and the planet does not transit (inclination unknown); the limit is "
+                "treated as a minimum mass m sin i: used as the mass (sin i = 1) unless --inclination-prior is "
+                "set.",
             )
         )
     elif row.get("pl_bmasselim") == -1:
