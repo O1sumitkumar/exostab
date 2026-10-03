@@ -350,6 +350,10 @@ def test_stellar_mass_is_the_median_of_the_rows_whatever_their_order() -> None:
     two = [row("Host b", st_mass=1.0), row("Host c", pl_orbper=25.0, st_mass=0.9)]
     assert system_from_rows(two, INFO).star.mass_msun.value == 0.9
     assert system_from_rows(two[::-1], INFO).star.mass_msun.value == 0.9
+    assert any("lower of the two middle values" in f.message for f in system_from_rows(two, INFO).flags)
+    # ... which is only said when the two middle values differ
+    four = [*rows, {**rows[1], "pl_name": "Host e", "pl_letter": "e", "pl_orbper": 15.0}]  # 0.56 x 3, 0.77
+    assert not any("lower of the two" in f.message for f in system_from_rows(four, INFO).flags)
     # rows that agree raise no flag; a row without a stellar mass is skipped
     assert "star_mass_inconsistent" not in rules(pair())
     s = system_from_rows([row("Host b", st_mass=None), row("Host c", pl_orbper=25.0, st_mass=0.8)], INFO)

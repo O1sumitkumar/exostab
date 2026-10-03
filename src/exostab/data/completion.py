@@ -147,7 +147,9 @@ def _star_mass_flag(rows: Sequence[Row], chosen: Row) -> CompletionFlag | None:
         f"{_star_mass_entry(rs[0])} ({', '.join(sorted(str(r['pl_name']) for r in rs))})"
         for _, rs in sorted(groups.items())
     ]
-    even = " (the lower of the two middle values, the less stable choice)" if len(usable) % 2 == 0 else ""
+    values = sorted(float(r["st_mass"]) for r in usable)
+    split = values[(len(values) - 1) // 2] != values[len(values) // 2]  # even count, two middle values differ
+    even = " (the lower of the two middle values, the less stable choice)" if split else ""
     return _flag(
         None,
         "st_mass",
