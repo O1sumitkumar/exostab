@@ -75,7 +75,17 @@ path = "src/exostab/__init__.py"
 packages = ["src/exostab"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/exostab", "tests", "examples", "README.md", "LICENSE", "CITATION.cff", "CHANGELOG.md"]
+include = [
+    "src/exostab",
+    "tests",
+    "examples",
+    "scripts",  # tests/test_scripts.py loads them
+    "streamlit_app.py",  # tests/test_web.py runs it
+    "README.md",
+    "LICENSE",
+    "CITATION.cff",
+    "CHANGELOG.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

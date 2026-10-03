@@ -103,6 +103,16 @@ jobs:
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check --strict dist/*
+      - name: Tests run from the unpacked sdist (as distributions and conda-forge run them)
+        env:
+          EXOSTAB_OFFLINE: "1"
+          MPLBACKEND: Agg
+        run: |
+          mkdir sdist-check
+          tar -xzf dist/*.tar.gz -C sdist-check --strip-components 1
+          cd sdist-check
+          python -m pip install ".[dev]"
+          python -m pytest
       - name: Wheel contains the snapshot and the schema
         run: |
           python -m zipfile -l dist/*.whl | grep -q pscomppars_snapshot.csv
