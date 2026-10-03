@@ -171,8 +171,9 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
 
     ``upper_limits`` lists the inputs that are only published upper limits (:func:`upper_limit_inputs`). The
     nominal run uses each limit and the draws are uniform below it, which does not sample a measurement
-    uncertainty. A limit on a mass or an eccentricity is the worst case for stability, so a stable result
-    still holds; an N-body instability, however, only constrains those values and gives "marginal". Without
+    uncertainty. A limit on a planet's mass or eccentricity is the worst case for stability, so a stable
+    result still holds; an N-body instability, however, only constrains the limited values and gives
+    "marginal", whichever input is limited (a stellar-mass limit is not a worst case). Without
     Monte Carlo draws (``--draws 0``) nothing was tested against the uncertainties, so the verdict is at most
     "marginal". The summary is built from the draw counts and never claims more than they show.
     """
