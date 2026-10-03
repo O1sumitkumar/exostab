@@ -404,6 +404,50 @@ def test_damaged_cache_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     assert store.load_cache() is None
 
 
+def test_truncated_or_altered_cache_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A cut-off table used to load silently (csv fills missing fields with None): systems lost planets.
+    monkeypatch.delenv("EXOSTAB_OFFLINE")
+    three = [*pair(), row("Host d", pl_orbper=60.0)]
+    monkeypatch.setattr(store, "fetch_rows", lambda where: three)
+    load_rows()
+    table = store.cache_dir() / store.CACHE_TABLE
+    full = table.read_bytes()
+    assert store.load_cache() is not None
+    table.write_bytes(full[: len(full) * 2 // 3])  # last rows lost or cut in the middle
+    assert store.load_cache() is None
+    table.write_bytes(full.replace(b"25.0", b"26.0"))  # same number of rows, different content
+    assert store.load_cache() is None
+    # a cache written before the checksum existed is still accepted if its row count matches
+    table.write_bytes(full)
+    meta_path = store.cache_dir() / store.CACHE_META
+    meta = json.loads(meta_path.read_text())
+    del meta["sha256"]
+    meta_path.write_text(json.dumps(meta))
+    assert store.load_cache() is not None
+
+
+def test_interrupted_refresh_keeps_the_previous_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EXOSTAB_OFFLINE")
+    monkeypatch.setattr(store, "fetch_rows", lambda where: pair())
+    load_rows()
+    good = (store.cache_dir() / store.CACHE_TABLE).read_bytes()
+
+    def interrupted(rows: Any, path: Path) -> None:
+        path.write_text("pl_name,hostname\nHost b,Host\n")  # partly written when the user presses Ctrl-C
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(store, "fetch_rows", lambda where: [*pair(), row("Host d", pl_orbper=60.0)])
+    monkeypatch.setattr(store, "write_csv", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        load_rows(refresh=True)
+    assert (store.cache_dir() / store.CACHE_TABLE).read_bytes() == good
+    cached = store.load_cache()
+    assert cached is not None and cached[0] == pair()
+    assert sorted(p.name for p in store.cache_dir().iterdir()) == sorted(
+        [store.CACHE_META, store.CACHE_TABLE]
+    )
+
+
 def test_network_failure_falls_back_to_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("EXOSTAB_OFFLINE")
 

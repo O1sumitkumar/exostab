@@ -14,6 +14,7 @@ if that is set.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -75,35 +76,62 @@ def load_snapshot() -> tuple[list[Row], TableInfo]:
     )
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def load_cache() -> tuple[list[Row], TableInfo] | None:
+    """The cached table, or None if there is none or it is damaged (it is then rebuilt).
+
+    The table must have the row count, and the checksum if one is recorded, stored in the metadata: a table
+    cut off by an interrupted write would otherwise load silently, with planets missing.
+    """
     d = cache_dir()
     table, meta = d / CACHE_TABLE, d / CACHE_META
     if not (table.exists() and meta.exists()):
         return None
     try:
         info = json.loads(meta.read_text(encoding="utf-8"))
+        if not isinstance(info, dict) or ("sha256" in info and info["sha256"] != _sha256(table)):
+            return None
         rows = read_csv(table)
     except (OSError, ValueError, ArchiveError):
         return None  # a damaged cache is ignored and rebuilt
+    if len(rows) != info.get("n_rows"):
+        return None
     return rows, TableInfo(kind="archive-cache", retrieved_utc=info.get("retrieved_utc"), path=str(table))
 
 
 def refresh_cache() -> tuple[list[Row], TableInfo]:
+    """Query the archive and replace the cache.
+
+    Both files are written to temporary names first and then renamed into place, so an interrupted write
+    leaves the previous cache intact.
+    """
     rows = fetch_rows(MULTI_PLANET_WHERE)
     d = cache_dir()
     d.mkdir(parents=True, exist_ok=True)
     stamp = _now()
-    write_csv(rows, d / CACHE_TABLE)
-    meta = {
-        "retrieved_utc": stamp,
-        "table": TABLE,
-        "service": TAP_SERVICE,
-        "where": MULTI_PLANET_WHERE,
-        "n_rows": len(rows),
-        "exostab_version": __version__,
-    }
-    (d / CACHE_META).write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    return rows, TableInfo(kind="archive", retrieved_utc=stamp, path=str(d / CACHE_TABLE))
+    table, meta_path = d / CACHE_TABLE, d / CACHE_META
+    tmp_table, tmp_meta = d / (CACHE_TABLE + ".tmp"), d / (CACHE_META + ".tmp")
+    try:
+        write_csv(rows, tmp_table)
+        meta = {
+            "retrieved_utc": stamp,
+            "table": TABLE,
+            "service": TAP_SERVICE,
+            "where": MULTI_PLANET_WHERE,
+            "n_rows": len(rows),
+            "sha256": _sha256(tmp_table),
+            "exostab_version": __version__,
+        }
+        tmp_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        os.replace(tmp_table, table)
+        os.replace(tmp_meta, meta_path)
+    finally:
+        tmp_table.unlink(missing_ok=True)
+        tmp_meta.unlink(missing_ok=True)
+    return rows, TableInfo(kind="archive", retrieved_utc=stamp, path=str(table))
 
 
 def load_rows(*, refresh: bool = False, offline: bool = False) -> tuple[list[Row], TableInfo]:
