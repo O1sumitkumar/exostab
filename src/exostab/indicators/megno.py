@@ -7,7 +7,8 @@ Each run (the nominal parameters and every Monte Carlo draw) is integrated with 
 * ``chaotic`` (verdict marginal): no close encounter or escape, but <Y> at or above ``MEGNO_CHAOTIC``;
 * ``unstable``: a close encounter or an escape happened;
 * ``inconclusive``: the relative energy error exceeded ``ENERGY_ERROR_MAX`` (and nothing physical
-  stopped the run), or the integration failed.
+  stopped the run), or the integration failed. The error is checked over the whole of every run, at
+  :data:`exostab.integrate.ENERGY_CHECKS` equally spaced times, whatever is kept for the plots.
 
 For quasi-periodic (regular) motion <Y> tends to 2; for chaotic motion it grows linearly with time
 (Cincotta & Simo 2000). The threshold and the run length are finite, so a "regular" run means "no

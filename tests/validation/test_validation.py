@@ -16,7 +16,7 @@ from exostab._numerics import bisect
 from exostab.analysis import CheckSettings, check_system
 from exostab.data import load_system, load_system_file
 from exostab.indicators import Verdict, amd, hill
-from exostab.indicators.megno import classify_run
+from exostab.indicators.megno import MEGNO_CHAOTIC, classify_run
 from exostab.integrate import RunConfig, run
 from exostab.sampling import Body, Realization, realizations
 
@@ -185,7 +185,13 @@ def test_hd127195_monte_carlo_matches_the_note(hd127195) -> None:  # type: ignor
     p_reg, p_enc = 0.67, 0.045
     assert counts["regular"] / n == pytest.approx(p_reg, abs=3 * math.sqrt(p_reg * (1 - p_reg) / n))
     assert counts["unstable"] / n == pytest.approx(p_enc, abs=3 * math.sqrt(p_enc * (1 - p_enc) / n))
-    assert counts["inconclusive"] == 0
+    # The Note has no energy criterion. exostab checks the energy error over the whole run (DECISIONS.md, D8),
+    # and a few chaotic draws exceed 1e-5 at a pericentre passage (11 of 200 measured): they are inconclusive.
+    # Each of them is chaotic by MEGNO, so they belong to the Note's chaotic draws and leave the comparison
+    # above unchanged; there are far fewer than the 20% that would make the indicator inconclusive.
+    inconclusive = [r for r in hd127195.runs[1:] if classify_run(r) == "inconclusive"]
+    assert len(inconclusive) == counts["inconclusive"] <= 0.1 * n
+    assert all(r.status == "completed" and r.megno >= MEGNO_CHAOTIC for r in inconclusive)
 
 
 def test_hd127195_every_draw_passes_the_collision_amd_test(hd127195) -> None:  # type: ignore[no-untyped-def]

@@ -24,9 +24,13 @@ Set-up (justified choices; see also DECISIONS.md):
   (DECISIONS.md, D20). The run stops with an *escape* when a
   body moves farther than ``escape_factor`` (default 100) times the largest semi-major axis from the
   centre of mass.
-* The relative energy error |E(t) - E(0)| / |E(0)| is measured at every sample and at the end; the
-  maximum is reported. A run whose error exceeds the threshold in :mod:`exostab.indicators.megno` is
-  classified as inconclusive instead of receiving a verdict.
+* The relative energy error |E(t) - E(0)| / |E(0)| is measured at ``ENERGY_CHECKS`` equally spaced times in
+  every run (the nominal run, every Monte Carlo draw, the IAS15 check, catalog and sweep runs alike) and when a
+  run stops early; the maximum is reported. The time series kept for the plots (``n_samples``) is a subset of
+  these checks, so it cannot change the result. WHFast's error oscillates and peaks at pericentre passages, so
+  the error at the end of a run alone can be orders of magnitude below this maximum. A run whose maximum
+  exceeds the threshold in :mod:`exostab.indicators.megno` is classified as inconclusive instead of receiving
+  a verdict.
 """
 
 from __future__ import annotations
@@ -44,6 +48,9 @@ from .units import SIM_UNITS
 Integrator = Literal["whfast", "ias15"]
 Status = Literal["completed", "encounter", "escape", "error"]
 
+# Number of equally spaced times at which every run checks its relative energy error (DECISIONS.md, D8).
+ENERGY_CHECKS = 1200
+
 
 @dataclass(frozen=True)
 class RunConfig:
@@ -54,7 +61,7 @@ class RunConfig:
     dt_fraction: float = 1 / 30  # WHFast step as a fraction of the shortest pericentre timescale
     megno: bool = True
     megno_seed: int = 0
-    n_samples: int = 0  # number of time-series samples to keep (0: only the final state)
+    n_samples: int = 0  # time-series samples kept for the plots (0: none; at most ENERGY_CHECKS)
     escape_factor: float = 100.0
 
 
@@ -70,7 +77,7 @@ class RunResult:
     status: Status
     megno: float | None
     lyapunov: float | None  # 1/yr
-    energy_error: float  # maximum relative energy error over the run
+    energy_error: float  # maximum relative energy error at the ENERGY_CHECKS checkpoints and at a stop
     walltime: float  # s
     encounter_distance: float  # AU
     n_orbits_innermost: float
@@ -140,11 +147,11 @@ def run(real: Realization, config: RunConfig) -> RunResult:
     status: Status = "completed"
     error: str | None = None
 
-    def sample() -> None:
+    def sample(keep: bool) -> None:
         nonlocal max_err
         err = abs((sim.energy() - e0) / e0)
         max_err = max(max_err, err)
-        if config.n_samples:
+        if keep:
             series["t"].append(sim.t)
             series["megno"].append(sim.megno() if config.megno else math.nan)
             series["energy_error"].append(err)
@@ -154,11 +161,16 @@ def run(real: Realization, config: RunConfig) -> RunResult:
                 series[f"x{k}"].append(p.x - star.x)
                 series[f"y{k}"].append(p.y - star.y)
 
-    checkpoints = [t_target * (i + 1) / config.n_samples for i in range(config.n_samples)] or [t_target]
+    # The energy error is checked at the same ENERGY_CHECKS checkpoints in every run, so that the
+    # classification never depends on n_samples; the time series is kept at n_samples of them, as evenly spaced
+    # as the grid allows, so no plotted error exceeds the reported maximum.
+    checkpoints = [t_target * (i + 1) / ENERGY_CHECKS for i in range(ENERGY_CHECKS)]
+    n_keep = min(config.n_samples, ENERGY_CHECKS)
+    kept = {round((j + 1) * ENERGY_CHECKS / n_keep) - 1 for j in range(n_keep)}
     try:
-        if config.n_samples:
-            sample()
-        for tc in checkpoints:
+        if n_keep:
+            sample(keep=True)
+        for i, tc in enumerate(checkpoints):
             # exact_finish_time=0: never shorten a step to land on the checkpoint, so sampling does not
             # change the trajectory of a fixed-step integrator. A step can therefore overshoot the next
             # checkpoints when they are closer together than one step (short runs); those are skipped, because
@@ -166,7 +178,7 @@ def run(real: Realization, config: RunConfig) -> RunResult:
             if tc <= sim.t:
                 continue
             sim.integrate(tc, exact_finish_time=0)
-            sample()
+            sample(keep=i in kept)
     except (rebound.Collision, rebound.Encounter):
         status = "encounter"
     except rebound.Escape:

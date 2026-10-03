@@ -3,7 +3,15 @@ from dataclasses import replace
 
 import pytest
 
-from exostab.integrate import RunConfig, build_simulation, hill_radii, pericentre_timescale, run, timestep
+from exostab.integrate import (
+    ENERGY_CHECKS,
+    RunConfig,
+    build_simulation,
+    hill_radii,
+    pericentre_timescale,
+    run,
+    timestep,
+)
 from exostab.sampling import Body, Realization
 
 
@@ -71,6 +79,22 @@ def test_sampling_never_integrates_backwards(integrator: str) -> None:
     assert (sampled.t_end, sampled.megno) == (plain.t_end, plain.megno)
     if integrator == "whfast":
         assert sampled.dt == pytest.approx(0.1 / 30)
+
+
+def test_energy_error_is_checked_over_the_whole_run_whatever_is_kept_for_plots() -> None:
+    # Eccentric orbits: WHFast's energy error peaks at pericentre, so the value at the end is not the maximum.
+    r = pair(ratio=2.0, e=(0.3, 0.2))
+    runs = {n: run(r, RunConfig(n_orbits=2000, n_samples=n)) for n in (0, 7, 300, ENERGY_CHECKS)}
+    full = runs[ENERGY_CHECKS]
+    assert full.energy_error == max(full.series["energy_error"]) > 3 * full.series["energy_error"][-1]
+    for n, res in runs.items():
+        # the same checks in every run (draws and catalog runs keep no time series), so the same verdict
+        assert res.energy_error == full.energy_error and res.megno == full.megno
+        if n:
+            assert len(res.series["t"]) == n + 1 and max(res.series["energy_error"]) <= res.energy_error
+    assert runs[300].series["t"][-1] == full.series["t"][-1]
+    capped = run(r, RunConfig(n_orbits=2000, n_samples=ENERGY_CHECKS + 500))
+    assert capped.series["t"] == full.series["t"]  # never more samples than energy checks
 
 
 def test_close_encounter_is_detected() -> None:

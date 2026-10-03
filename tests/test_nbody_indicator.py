@@ -143,6 +143,22 @@ def test_overall_verdict_is_conservative(
         assert o.reasons
 
 
+def test_plot_samples_never_change_the_result() -> None:
+    """The catalog keeps no time series (n_samples=0), the web app 300 and the CLI 400: same numbers, same verdicts."""
+    s = two_planet_system(err=True, e=(0.3, 0.2), period_ratio=2.0)
+    results = [
+        check_system(s, CheckSettings(orbits=600, draws=2, seed=4, jobs=1, n_samples=n))
+        for n in (0, 300, 400)
+    ]
+    for res in results:
+        assert [r.energy_error for r in res.runs] == [r.energy_error for r in results[-1].runs]
+        assert res.ias15 is not None and res.ias15.energy_error == results[-1].ias15.energy_error  # type: ignore[union-attr]
+        assert {k: v.verdict for k, v in res.report.indicators.items()} == {
+            k: v.verdict for k, v in results[-1].report.indicators.items()
+        }
+        assert res.report.overall.verdict is results[-1].report.overall.verdict
+
+
 def test_check_system_end_to_end_small() -> None:
     s = two_planet_system(err=True)
     res = check_system(s, CheckSettings(orbits=300, draws=3, seed=1, jobs=1, n_samples=10), command="test")
