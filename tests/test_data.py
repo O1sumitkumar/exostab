@@ -267,14 +267,47 @@ def test_period_from_semimajor_axis() -> None:
 def test_star_rules() -> None:
     with pytest.raises(IncompleteSystemError, match="circumbinary"):
         system_from_rows(pair(cb_flag=1), INFO)
-    rows = pair()
-    rows[0]["st_mass"] = None
     with pytest.raises(IncompleteSystemError, match="stellar mass"):
-        system_from_rows(rows, INFO)
+        system_from_rows([row("Host b", st_mass=None), row("Host c", pl_orbper=25.0, st_mass=None)], INFO)
     rows = [row("Host b", sy_snum=2, st_masslim=1), row("Host c", pl_orbper=25.0)]
     assert {"companion_stars_ignored", "star_mass_upper_limit"} <= rules(rows)
     with pytest.raises(IncompleteSystemError, match="only one planet"):
         system_from_rows([row("Host b")], INFO)
+
+
+def _kepler114_like() -> list[dict[str, Any]]:
+    # Kepler-114 in the archive: b's row has M* = 0.77 (Morton et al. 2016), c's and d's rows 0.56 (Xie 2014,
+    # also the source of their TTV masses). exostab used whichever row came first.
+    morton = {"st_mass": 0.77, "st_masserr1": 0.02, "st_masserr2": -0.022, "st_mass_reflink": REF_A}
+    xie = {"st_mass": 0.56, "st_masserr1": 0.06, "st_masserr2": -0.06, "st_mass_reflink": REF_B}
+    return [
+        row("Host b", pl_orbper=5.2, **morton),
+        row("Host c", pl_orbper=8.0, **xie),
+        row("Host d", pl_orbper=11.8, **xie),
+    ]
+
+
+def test_stellar_mass_is_the_median_of_the_rows_whatever_their_order() -> None:
+    rows = _kepler114_like()
+    for k in range(len(rows)):
+        s = system_from_rows(rows[k:] + rows[:k], INFO)
+        assert s.star.mass_msun.value == 0.56
+        assert s.star.mass_msun.reference == "Beta et al. 2021"
+        assert s.star.mass_msun.err_plus == 0.06
+        flag = next(f for f in s.flags if f.rule == "star_mass_inconsistent")
+        assert flag.planet is None
+        assert "0.77" in flag.message and "Alpha et al. 2020" in flag.message
+        assert "0.56" in flag.message and "Host c, Host d" in flag.message
+    # an even number of rows: the lower of the two middle values (the less stable choice)
+    two = [row("Host b", st_mass=1.0), row("Host c", pl_orbper=25.0, st_mass=0.9)]
+    assert system_from_rows(two, INFO).star.mass_msun.value == 0.9
+    assert system_from_rows(two[::-1], INFO).star.mass_msun.value == 0.9
+    # rows that agree raise no flag; a row without a stellar mass is skipped
+    assert "star_mass_inconsistent" not in rules(pair())
+    s = system_from_rows([row("Host b", st_mass=None), row("Host c", pl_orbper=25.0, st_mass=0.8)], INFO)
+    assert s.star.mass_msun.value == 0.8
+    # `exostab list` shows the same stellar mass
+    assert list_systems(rows)[0].star_mass_msun == 0.56
 
 
 def test_controversial_flag() -> None:

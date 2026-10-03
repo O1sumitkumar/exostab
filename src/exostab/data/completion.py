@@ -3,6 +3,10 @@
 Every rule that fires adds a :class:`~exostab.models.CompletionFlag`; the flags are printed in every
 report and stored in the JSON output. The rules (DECISIONS.md, D11):
 
+Stellar mass
+    The planet rows of one host can give different stellar masses (the composite table picks them per
+    planet). The median of the rows is used, for an even number of rows the lower middle value, and the
+    disagreement is flagged with every value and its reference.
 Period
     Published period used when present. Otherwise derived from the semi-major axis with Kepler's third
     law ("derived"). A planet with neither cannot be placed and the system is rejected.
@@ -31,6 +35,7 @@ Inclinations and nodes
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Sequence
 from html import unescape
 from typing import Any
@@ -83,6 +88,64 @@ def _flag(planet: str | None, parameter: str, rule: str, message: str) -> Comple
     return CompletionFlag(planet=planet, parameter=parameter, rule=rule, message=message)
 
 
+def _star_mass_key(row: Row) -> tuple[float, str, str, str]:
+    """The stellar-mass entry of one planet row: value, errors and citation (for grouping and sorting)."""
+    ref = parse_reflink(row.get("st_mass_reflink"))[0] or ""
+    return float(row["st_mass"]), str(row.get("st_masserr1")), str(row.get("st_masserr2")), ref
+
+
+def star_mass_row(rows: Sequence[Row]) -> Row | None:
+    """The planet row whose stellar mass is used for the whole system, or None if no row has one.
+
+    The composite table picks the stellar parameters separately for each planet row, so the rows of one
+    host can give different stellar masses, and the archive returns the rows in no particular order. The
+    rule is the median of the rows' values, for an even number of rows the lower of the two middle values
+    (a smaller star gives larger planet-to-star mass ratios, the less stable choice). Among rows with that
+    value, the most common (errors, reference) wins, then the first in sort order, so the result never
+    depends on the row order.
+    """
+    usable = [r for r in rows if r.get("st_mass") is not None]
+    if not usable:
+        return None
+    values = sorted(float(r["st_mass"]) for r in usable)
+    median = values[(len(values) - 1) // 2]
+    same = [r for r in usable if r["st_mass"] == median]
+    counts = Counter(_star_mass_key(r) for r in same)
+    return min(same, key=lambda r: (-counts[_star_mass_key(r)], _star_mass_key(r)))
+
+
+def _star_mass_entry(row: Row) -> str:
+    """ "0.56 +0.06/-0.06 from Xie 2014" (solar masses)."""
+    text = f"{row['st_mass']:g}"
+    e1, e2 = row.get("st_masserr1"), row.get("st_masserr2")
+    if e1 is not None and e2 is not None:
+        text += f" +{abs(e1):g}/-{abs(e2):g}"
+    return f"{text} from {parse_reflink(row.get('st_mass_reflink'))[0] or 'an unnamed source'}"
+
+
+def _star_mass_flag(rows: Sequence[Row], chosen: Row) -> CompletionFlag | None:
+    """Flag listing the stellar masses of the planet rows when they disagree."""
+    usable = [r for r in rows if r.get("st_mass") is not None]
+    groups: dict[tuple[float, str, str, str], list[Row]] = {}
+    for r in usable:
+        groups.setdefault(_star_mass_key(r), []).append(r)
+    if len(groups) < 2:
+        return None
+    entries = [
+        f"{_star_mass_entry(rs[0])} ({', '.join(sorted(str(r['pl_name']) for r in rs))})"
+        for _, rs in sorted(groups.items())
+    ]
+    even = " (the lower of the two middle values, the less stable choice)" if len(usable) % 2 == 0 else ""
+    return _flag(
+        None,
+        "st_mass",
+        "star_mass_inconsistent",
+        f"The planet rows give different stellar masses in solar masses: {'; '.join(entries)}. Used: "
+        f"{_star_mass_entry(chosen)}, the median of the rows{even}. Planet masses derived with another "
+        "stellar mass are not rescaled.",
+    )
+
+
 def complete_star(rows: Sequence[Row]) -> tuple[Star, list[CompletionFlag]]:
     r0 = rows[0]
     host = str(r0["hostname"])
@@ -91,10 +154,14 @@ def complete_star(rows: Sequence[Row]) -> tuple[Star, list[CompletionFlag]]:
         raise IncompleteSystemError(
             f"{host} is a circumbinary system; exostab models a single host star and cannot check it."
         )
-    if r0.get("st_mass") is None:
+    chosen = star_mass_row(rows)
+    if chosen is None:
         raise IncompleteSystemError(f"{host}: the stellar mass is missing; supply it with --from-file.")
-    mass = _value(r0, "st_mass")
-    if r0.get("st_masslim") == 1:
+    mass = _value(chosen, "st_mass")
+    inconsistent = _star_mass_flag(rows, chosen)
+    if inconsistent is not None:
+        flags.append(inconsistent)
+    if chosen.get("st_masslim") == 1:
         mass = mass.model_copy(update={"provenance": Provenance.UPPER_LIMIT})
         flags.append(
             _flag(

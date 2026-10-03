@@ -8,7 +8,13 @@ from dataclasses import dataclass
 
 from ..models import DataSource, System
 from .archive import TABLE, TAP_SERVICE, Row, group_by_host
-from .completion import IncompleteSystemError, complete_planets, complete_star, coplanar_flag
+from .completion import (
+    IncompleteSystemError,
+    complete_planets,
+    complete_star,
+    coplanar_flag,
+    star_mass_row,
+)
 from .files import SystemFileError, load_system_file
 from .names import SystemNotFoundError, resolve_host
 from .store import TableInfo, load_rows
@@ -87,13 +93,14 @@ def list_systems(
         pmax = max(periods) if periods else None
         if max_period_days is not None and (pmax is None or len(periods) < len(rs) or pmax > max_period_days):
             continue
+        star_row = star_mass_row(rs)  # the same choice as in the analysis
         out.append(
             SystemSummary(
                 host=host,
                 n_planets=len(rs),
                 min_period_days=min(periods) if periods else None,
                 max_period_days=pmax,
-                star_mass_msun=rs[0].get("st_mass"),
+                star_mass_msun=None if star_row is None else star_row["st_mass"],
                 minimum_masses=sum(r.get("pl_bmassprov") == "Msini" for r in rs),
                 estimated_masses=sum(
                     r.get("pl_bmassprov") == "M-R relationship" or r.get("pl_bmasse") is None for r in rs
