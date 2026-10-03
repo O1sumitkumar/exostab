@@ -1,9 +1,10 @@
+import re
 from pathlib import Path
 
 import pytest
 
 from conftest import EXAMPLES
-from exostab.data import IncompleteSystemError, SystemFileError, load_system_file
+from exostab.data import IncompleteSystemError, SystemFileError, files, load_system_file
 from exostab.models import MassKind, PhaseKind, Provenance
 from exostab.units import MJUP_IN_MEARTH
 
@@ -35,6 +36,14 @@ def test_examples_load() -> None:
     hd = load_system_file(EXAMPLES / "hd127195_note.yaml")
     assert hd.planet("b").phase.kind is PhaseKind.MEAN_LONGITUDE
     assert hd.source.kind == "file" and hd.source.note
+
+
+def test_example_shows_every_key() -> None:
+    # The docs point to this file as the format reference, and it says it shows every supported field.
+    text = (EXAMPLES / "two_planet.yaml").read_text(encoding="utf-8")
+    keys = files.TOP_KEYS | files.STAR_KEYS | files.PLANET_KEYS | files.VALUE_KEYS
+    missing = sorted(k for k in keys if not re.search(rf"(^|[\s{{,]){k}:", text, flags=re.MULTILINE))
+    assert missing == []
 
 
 def test_defaults_and_flags(tmp_path: Path) -> None:

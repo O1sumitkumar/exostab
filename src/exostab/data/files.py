@@ -2,8 +2,8 @@
 
 A value can be a number, or a mapping with ``value`` and optional ``err`` (symmetric), ``err_plus`` /
 ``err_minus`` (asymmetric), ``upper_limit: true`` (planet masses and eccentricities only) and ``reference``.
-Units are part of the key names.
-See ``examples/two_planet.yaml`` for a complete example::
+Units are part of the key names. ``examples/two_planet.yaml`` shows every key, with the alternatives in
+comments; in short::
 
     name: My system
     epoch_jd: 2460000.0            # epoch of mean anomalies / mean longitudes; required if other planets
@@ -13,12 +13,13 @@ See ``examples/two_planet.yaml`` for a complete example::
       mass_msun: {value: 1.0, err: 0.05}
     planets:
       - name: My star b
-        period_days: 100.0           # or semimajor_axis_au
+        period_days: 100.0           # or semimajor_axis_au (both: they must agree)
         mass_earth: {value: 30, err: 3}   # or mass_jupiter / mass_msun, or radius_earth only
         mass_kind: true              # true | minimum | estimated
         eccentricity: {value: 0.05, err: 0.02}
         omega_deg: 90                # argument of periastron
-        mean_longitude_deg: 10       # or mean_anomaly_deg / transit_time_jd / periastron_time_jd
+        mean_longitude_deg: 10       # or transit_time_jd, or mean_anomaly_deg / periastron_time_jd
+                                     # (these two need omega_deg)
 
 Missing values follow the same completion rules as archive data (:mod:`exostab.data.completion`).
 """
@@ -60,7 +61,10 @@ class SystemFileError(ValueError):
     """The YAML file does not describe a valid system."""
 
 
-_PLANET_KEYS = {
+TOP_KEYS = {"name", "epoch_jd", "star", "planets", "notes"}
+STAR_KEYS = {"name", "mass_msun"}
+VALUE_KEYS = {"value", "err", "err_plus", "err_minus", "upper_limit", "reference"}
+PLANET_KEYS = {
     "name",
     "period_days",
     "semimajor_axis_au",
@@ -94,7 +98,7 @@ def _value(
         return Value(value=float(raw) * scale, reference=reference)
     if not isinstance(raw, dict):
         raise SystemFileError(f"{where}: expected a number or a mapping, got {raw!r}")
-    unknown = set(raw) - {"value", "err", "err_plus", "err_minus", "upper_limit", "reference"}
+    unknown = set(raw) - VALUE_KEYS
     if unknown:
         raise SystemFileError(f"{where}: unknown keys {sorted(unknown)}")
     if "value" not in raw:
@@ -152,7 +156,7 @@ def _check_axis(name: str, a: Value, period_days: float, m_total_msun: float) ->
 
 def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx: int) -> Planet:
     name = str(raw.get("name") or f"planet {idx + 1}")
-    unknown = set(raw) - _PLANET_KEYS
+    unknown = set(raw) - PLANET_KEYS
     if unknown:
         raise SystemFileError(f"{name}: unknown keys {sorted(unknown)}")
     ref = raw.get("reference")
@@ -347,13 +351,13 @@ def load_system_file(path: str | Path) -> System:
         raise SystemFileError(f"{p} is not valid YAML: {exc}") from exc
     if not isinstance(raw, dict):
         raise SystemFileError(f"{p}: the top level must be a mapping")
-    unknown = set(raw) - {"name", "epoch_jd", "star", "planets", "notes"}
+    unknown = set(raw) - TOP_KEYS
     if unknown:
         raise SystemFileError(f"{p}: unknown top-level keys {sorted(unknown)}")
     star_raw = raw.get("star")
     if not isinstance(star_raw, dict) or "mass_msun" not in star_raw:
         raise SystemFileError(f"{p}: 'star' must be a mapping with 'mass_msun'")
-    unknown = set(star_raw) - {"name", "mass_msun"}
+    unknown = set(star_raw) - STAR_KEYS
     if unknown:  # e.g. a misspelt error key, which would leave the stellar mass fixed in every draw
         raise SystemFileError(f"{p}: star: unknown keys {sorted(unknown)}")
     star_mass = _value(star_raw["mass_msun"], where="star.mass_msun")

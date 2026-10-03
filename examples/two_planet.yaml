@@ -1,20 +1,33 @@
-# A made-up two-planet system showing every supported field. Units are part of the key names.
-# A value is either a number or {value, err} / {value, err_plus, err_minus}; planet masses and eccentricities
-# can also be {value, upper_limit: true}.
+# A made-up two-planet system showing every supported key; alternatives are given in comments.
+# Units are part of the key names. A value is a number, or a mapping:
+#   {value: 1.0, err: 0.1}                     symmetric error
+#   {value: 1.0, err_plus: 0.2, err_minus: 0.1}  asymmetric errors
+#   {value: 1.0, upper_limit: true}            only for planet masses and eccentricities
+#   {value: 1.0, err: 0.1, reference: Author et al. 2026}  citation for this value
+# Values without errors are held fixed in the Monte Carlo draws. Anything left out follows the completion
+# rules in docs/data-assumptions.md and is listed in the report.
 name: Example two-planet system
+# notes: Free text kept with the report (optional).
 epoch_jd: 2460000.0            # epoch of mean anomalies / mean longitudes; required here because planet c
                                # gives a transit time (optional only if no planet mixes the two)
-star:
+star:                          # the star takes only name and mass_msun
   name: Example star
   mass_msun: {value: 1.00, err: 0.05}
 planets:
   - name: Example b
     period_days: {value: 50.0, err: 0.01}
+    # semimajor_axis_au: 0.266   # instead of period_days (period from Kepler's third law), or with it
+    #                            # (it must then agree with the period within 10%)
     mass_earth: {value: 30.0, err: 5.0}
+    # or mass_jupiter: 0.094, or mass_msun: 9.0e-5; with no mass, radius_earth: {value: 2.0, err: 0.1}
+    # gives a mass from the Chen & Kipping (2017) relation (next to a mass it is kept for information)
     mass_kind: true                # true | minimum (m sin i) | estimated
     eccentricity: {value: 0.05, err: 0.03}
     omega_deg: {value: 90.0, err: 20.0}
     mean_longitude_deg: 0.0
+    # or one of (nearly the same orbit): mean_anomaly_deg: 270.0, periastron_time_jd: 2459962.5 (these two
+    # need omega_deg), transit_time_jd: {value: 2460012.4, err: 0.01}
+    # reference: Author et al. 2026   # citation used for every value of this planet without its own
   - name: Example c
     period_days: {value: 120.0, err: 0.05}
     mass_jupiter: {value: 0.5, err: 0.05}
