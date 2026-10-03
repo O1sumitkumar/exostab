@@ -159,6 +159,18 @@ def test_version_and_help() -> None:
     assert r.exit_code == 0 and __version__ in r.output
     r = runner.invoke(app, ["--help"])
     assert r.exit_code == 0 and "check" in r.output and "catalog" in r.output
+    # pip users have no streamlit_app.py: the help points to the packaged launcher
+    assert 'python -m exostab.web (needs pip install "exostab[web]")' in " ".join(r.output.split())
+
+
+def test_spock_message_points_to_the_environment_script(monkeypatch: pytest.MonkeyPatch) -> None:
+    # scripts/make_spock_env.sh is not installed with the package, so the message gives its URL
+    monkeypatch.delenv("EXOSTAB_SPOCK_PYTHON", raising=False)
+    r = runner.invoke(app, ["check", "Kepler-36", "--spock"])
+    assert r.exit_code == 2
+    assert "https://github.com/mimitoz62/exostab/blob/main/scripts/make_spock_env.sh" in " ".join(
+        r.output.split()
+    )
 
 
 def test_check_help_shows_the_run_length_defaults() -> None:

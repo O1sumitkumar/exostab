@@ -17,10 +17,14 @@ from rich.table import Table
 from . import __version__
 from .models import System
 
+REPO = "https://github.com/mimitoz62/exostab"
+SPOCK_ENV_SCRIPT = f"{REPO}/blob/main/scripts/make_spock_env.sh"  # not part of the package
+
 app = typer.Typer(
     name="exostab",
     help="Is this planetary system dynamically stable? Hill spacing, AMD and N-body/MEGNO indicators for "
     "known exoplanet systems, with every assumption shown.",
+    epilog='Web app: python -m exostab.web (needs pip install "exostab\\[web]").',
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",
@@ -167,8 +171,9 @@ def check(
         bool,
         typer.Option(
             "--spock",
-            help="Add SPOCK's machine-learned classifier (3+ planets). Needs a separate SPOCK environment: see "
-            "scripts/make_spock_env.sh; its python is taken from --spock-python or EXOSTAB_SPOCK_PYTHON.",
+            help="Add SPOCK's machine-learned classifier (3+ planets). Needs a separate SPOCK environment, built "
+            f"by scripts/make_spock_env.sh ({SPOCK_ENV_SCRIPT}); its python is taken from --spock-python or "
+            "EXOSTAB_SPOCK_PYTHON.",
         ),
     ] = False,
     spock_python: Annotated[
@@ -196,8 +201,9 @@ def check(
         python = find_spock(spock_python)
         if python is None:
             err_console.print(
-                "[red]--spock needs a SPOCK environment: run scripts/make_spock_env.sh and pass its python with "
-                "--spock-python or EXOSTAB_SPOCK_PYTHON.[/red]"
+                "[red]--spock needs a SPOCK environment: build one with scripts/make_spock_env.sh (in a clone of "
+                f"the repository, or download it from {SPOCK_ENV_SCRIPT}) and pass its python with --spock-python "
+                "or EXOSTAB_SPOCK_PYTHON.[/red]"
             )
             raise typer.Exit(2)
     system = _load(name, from_file, refresh, offline)

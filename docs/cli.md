@@ -13,6 +13,8 @@ $ exostab [OPTIONS] COMMAND [ARGS]...
 * `--version`: Show the version and exit.
 * `--help`: Show this message and exit.
 
+Web app: python -m exostab.web (needs pip install "exostab\[web]").
+
 **Commands**:
 
 * `check`: Stability report card for one system...
@@ -45,7 +47,7 @@ $ exostab check [OPTIONS] [name]
 * `--inclination-prior <none|isotropic>`: For minimum masses: &#x27;none&#x27; uses m sin i as the mass; &#x27;isotropic&#x27; draws the inclination (cos i uniform, sin i &gt;= 0.1) in every draw.  [default: none]
 * `--no-ias15`: Skip the IAS15 check of the nominal run.
 * `--no-plots`: Do not write PNG figures.
-* `--spock`: Add SPOCK&#x27;s machine-learned classifier (3+ planets). Needs a separate SPOCK environment: see scripts/make_spock_env.sh; its python is taken from --spock-python or EXOSTAB_SPOCK_PYTHON.
+* `--spock`: Add SPOCK&#x27;s machine-learned classifier (3+ planets). Needs a separate SPOCK environment, built by scripts/make_spock_env.sh (https://github.com/mimitoz62/exostab/blob/main/scripts/make_spock_env.sh); its python is taken from --spock-python or EXOSTAB_SPOCK_PYTHON.
 * `--spock-python <str>`: Python interpreter of the SPOCK environment.
 * `-j, --jobs <int range>`: Worker processes (default: all cores but one).  [x&gt;=1]
 * `--refresh`: Query the archive again instead of using the disk cache.

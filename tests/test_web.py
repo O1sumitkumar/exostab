@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -271,6 +272,29 @@ def test_what_if_with_a_cleared_period(planet: str) -> None:
         whatif=_b64({"planet": planet, "mass_factor": 2.0}),
     )
     assert at.error and "a value is missing" in at.error[0].value
+
+
+def test_packaged_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `python -m exostab.web` works from an installed package: streamlit_app.py at the repository root is not
+    # in the wheel
+    import streamlit.web.cli as stcli
+
+    import exostab.web.__main__ as launcher
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(sys, "argv", ["python -m exostab.web"])
+    monkeypatch.setattr(stcli, "main", lambda: calls.append(list(sys.argv)))
+    assert launcher.main(["--server.port", "8502"]) == 0
+    assert calls == [["streamlit", "run", str(launcher.SCRIPT), "--server.port", "8502"]]
+    assert launcher.SCRIPT.parent == Path(launcher.__file__).parent
+    at = AppTest.from_file(str(launcher.SCRIPT), default_timeout=60)
+    at.query_params.update({"system": "Kepler-36", "source": "snapshot"})
+    at.run()
+    assert not at.exception, at.exception
+    assert at.title[0].value == "exostab"
+    # without the [web] extra it says what to install
+    monkeypatch.setitem(sys.modules, "streamlit.web.cli", None)
+    assert launcher.main([]) == 1
 
 
 def test_app_reports_a_broken_spock_environment(monkeypatch: pytest.MonkeyPatch) -> None:
