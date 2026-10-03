@@ -428,6 +428,33 @@ def test_name_resolution() -> None:
     assert names.all_names(["b", "A", "c"]) == ["A", "b", "c"]
 
 
+def test_planet_name_that_normalises_to_another_host() -> None:
+    # In the archive, the planet "55 Cnc b" (host "55 Cnc") and the host "55 Cnc B" (an M-dwarf companion
+    # with its own planets) differ only in case, as do "TOI-2267 b" (host "TOI-2267 A") and "TOI-2267 B".
+    hosts = archive.group_by_host(
+        [
+            row("55 Cnc b", host="55 Cnc"),
+            row("55 Cnc e", host="55 Cnc"),
+            row("55 Cnc B b", host="55 Cnc B"),
+            row("55 Cnc B c", host="55 Cnc B"),
+            row("TOI-2267 b", host="TOI-2267 A"),
+            row("TOI-2267 c", host="TOI-2267 A"),
+            row("TOI-2267 d", host="TOI-2267 B"),
+        ]
+    )
+    assert names.resolve_host("55 Cnc b", hosts) == "55 Cnc"
+    assert names.resolve_host("55 Cnc B", hosts) == "55 Cnc B"
+    assert names.resolve_host("55 cnc e", hosts) == "55 Cnc"
+    assert names.resolve_host("TOI-2267 b", hosts) == "TOI-2267 A"
+    assert names.resolve_host("TOI-2267 B", hosts) == "TOI-2267 B"
+    # a typed name that matches both is refused instead of silently picking one
+    with pytest.raises(names.AmbiguousNameError) as err:
+        names.resolve_host("55 cnc b", hosts)
+    assert isinstance(err.value, SystemNotFoundError)  # the CLI and the web app report it like a miss
+    assert set(err.value.suggestions) == {"55 Cnc", "55 Cnc B"}
+    assert "'55 Cnc b'" in str(err.value) and "'55 Cnc B'" in str(err.value)
+
+
 def test_list_systems_filters() -> None:
     rows, _ = load_rows()
     all_ = list_systems(rows)
