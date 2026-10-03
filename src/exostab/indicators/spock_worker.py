@@ -14,6 +14,7 @@ once with DYLD_LIBRARY_PATH pointing at the copy of libomp bundled with scikit-l
 
 import json
 import os
+import platform
 import sys
 
 # This file lives next to exostab's own indicators/spock.py; drop its folder from the import path so that
@@ -26,7 +27,7 @@ def _ensure_xgboost() -> None:
     try:
         import xgboost  # noqa: F401
     except Exception:
-        if sys.platform != "darwin" or os.environ.get("EXOSTAB_SPOCK_RETRY"):
+        if platform.system() != "Darwin" or os.environ.get("EXOSTAB_SPOCK_RETRY"):
             raise
         import sklearn
 

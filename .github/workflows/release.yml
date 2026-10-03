@@ -29,6 +29,9 @@ jobs:
 
   pypi:
     needs: build
+    # Runs once the PyPI trusted publisher exists and the repository variable PUBLISH_PYPI is "true"
+    # (RELEASING.md); until then releases are published on GitHub only.
+    if: vars.PUBLISH_PYPI == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -43,7 +46,8 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   github-release:
-    needs: pypi
+    needs: [build, pypi]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.pypi.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write  # creating the release also triggers the Zenodo archive once the integration is enabled
@@ -53,7 +57,12 @@ jobs:
         with:
           name: dist
           path: dist/
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^## /{p = (index($0, "[" v "]") > 0)} p' CHANGELOG.md > notes.md
+          test -s notes.md
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "exostab $GITHUB_REF_NAME" --notes-file CHANGELOG.md --verify-tag
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "exostab $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
