@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import time
 from pathlib import Path
 
 import pytest
@@ -283,8 +284,11 @@ def test_catalog_build(tmp_path: Path) -> None:
 def test_catalog_timeout_and_skip(tmp_path: Path) -> None:
     from exostab.catalog.build import CatalogSettings, build_catalog
 
+    t0 = time.monotonic()
     _, rows = build_catalog(CatalogSettings(orbits=1e6, draws=0, max_seconds=1, jobs=1), tmp_path, limit=1)
     assert rows[0]["status"] == "timeout" and rows[0]["overall"] is None
+    # the cap is enforced: the 1e6-orbit integration (minutes) is stopped, even under coverage
+    assert time.monotonic() - t0 < 30
     from exostab.catalog.build import check_one
     from exostab.data import load_rows
     from exostab.data.archive import group_by_host

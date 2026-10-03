@@ -131,6 +131,21 @@ def check_one(rows: list[Row], info: TableInfo, settings: CatalogSettings) -> di
     return row
 
 
+# Seconds a worker may take to exit after SIGTERM before it is killed. A Python-level SIGTERM handler (for
+# example coverage's ``sigterm = true``) runs only when REBOUND returns from C (sim.integrate to the next
+# energy checkpoint, which can take long for a slow system), so terminate() alone does not enforce the cap.
+KILL_AFTER_S = 5.0
+
+
+def _stop(p: Any, grace_s: float = KILL_AFTER_S) -> None:
+    """Stop worker process ``p``: SIGTERM, then SIGKILL if it is still alive after ``grace_s`` seconds."""
+    p.terminate()
+    p.join(timeout=grace_s)
+    if p.is_alive():
+        p.kill()
+        p.join()
+
+
 def _worker(rows: list[Row], info: TableInfo, settings: CatalogSettings, out: Any) -> None:
     host = str(rows[0]["hostname"])
     try:
@@ -181,8 +196,7 @@ def build_catalog(
                 p.join(timeout=5)
                 del active[host]
             elif time.monotonic() - start > settings.max_seconds:
-                p.terminate()
-                p.join()
+                _stop(p)
                 results[host] = _empty(
                     host, n, "timeout", f"exceeded {settings.max_seconds:g} s", settings, info
                 )

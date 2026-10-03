@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
+import signal
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -48,3 +52,22 @@ def test_hosts_with_a_single_planet_row_are_recorded_as_skipped(
     assert by_host["Lonely A"]["status"] == "skipped" and by_host["Lonely A"]["n_planets"] == 1
     assert "only one planet around Lonely A" in by_host["Lonely A"]["reason"]
     assert json.loads((tmp_path / "catalog_meta.json").read_text())["n_systems"] == 2
+
+
+def _ignore_sigterm(ready: Any) -> None:
+    """Stands for a worker inside a long C call whose Python SIGTERM handler cannot run (coverage's)."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    ready.set()
+    time.sleep(120)
+
+
+def test_a_worker_that_does_not_stop_on_sigterm_is_killed() -> None:
+    ctx = mp.get_context("spawn")
+    ready = ctx.Event()
+    p = ctx.Process(target=_ignore_sigterm, args=(ready,), daemon=True)
+    p.start()
+    assert ready.wait(60)
+    t0 = time.monotonic()
+    build._stop(p, grace_s=0.5)
+    assert not p.is_alive() and p.exitcode == -signal.SIGKILL
+    assert time.monotonic() - t0 < 10
