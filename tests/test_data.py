@@ -479,6 +479,24 @@ def test_network_failure_falls_back_to_snapshot(monkeypatch: pytest.MonkeyPatch)
         load_rows(refresh=True)
 
 
+def test_lookup_in_the_snapshot_says_only_the_snapshot_was_searched(monkeypatch: pytest.MonkeyPatch) -> None:
+    # During an outage without a cache, a real archive system outside the snapshot was reported as absent
+    # from the archive.
+    monkeypatch.delenv("EXOSTAB_OFFLINE")
+
+    def fail(where: str) -> None:
+        raise archive.ArchiveError("simulated outage")
+
+    monkeypatch.setattr(store, "fetch_rows", fail)
+    with pytest.raises(SystemNotFoundError) as err:
+        load_system("Kepler-1542")
+    message = str(err.value)
+    assert "offline snapshot" in message and "simulated outage" in message
+    assert "not the full archive table" in message and "in the archive table" not in message
+    with pytest.raises(SystemNotFoundError, match="offline snapshot"):
+        load_system("Kepler-1542", offline=True)
+
+
 def test_offline_flag_and_env() -> None:
     assert store.offline_requested()
     assert load_rows(offline=True)[1].kind == "snapshot"

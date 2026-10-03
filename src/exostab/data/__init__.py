@@ -17,7 +17,7 @@ from .completion import (
     star_mass_row,
 )
 from .files import SystemFileError, load_system_file
-from .names import SystemNotFoundError, resolve_host
+from .names import AmbiguousNameError, SystemNotFoundError, resolve_host
 from .store import TableInfo, load_rows
 
 __all__ = [
@@ -65,7 +65,16 @@ def load_system(name: str, *, refresh: bool = False, offline: bool = False) -> S
     """Look up a multi-planet system in the archive table by host or planet name."""
     rows, info = load_rows(refresh=refresh, offline=offline)
     hosts = group_by_host(rows)
-    host = resolve_host(name, hosts)
+    try:
+        host = resolve_host(name, hosts)
+    except SystemNotFoundError as exc:
+        if info.kind != "snapshot" or isinstance(exc, AmbiguousNameError):
+            raise
+        # Only the bundled snapshot was searched (offline, or the archive was unreachable): do not report a
+        # real archive system as missing from the archive.
+        why = "" if info.note is None or info.note.startswith("offline snapshot") else f" ({info.note})"
+        where = f"the offline snapshot{why}, not the full archive table"
+        raise SystemNotFoundError(exc.query, exc.suggestions, where=where) from exc
     return system_from_rows(hosts[host], info)
 
 
