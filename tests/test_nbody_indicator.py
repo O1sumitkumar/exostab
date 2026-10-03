@@ -225,6 +225,68 @@ def test_no_draws_never_give_a_confident_overall_verdict() -> None:
     assert res.report.indicators["nbody"].verdict is S and res.report.overall.verdict is M
 
 
+def test_stable_summary_never_hides_failing_draws() -> None:
+    every = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbody_ind(20)})
+    assert every.verdict is S and every.reasons == []
+    assert "no sign of instability for the nominal parameters or any of the 20 draws" in every.summary
+    # One draw fails the Hill criterion (a sufficient condition): still stable, but said so.
+    o = overall_verdict(
+        {"hill": ind("hill", S, [S] * 19 + [U]), "amd": ind("amd", S), "nbody": nbody_ind(20)}
+    )
+    assert o.verdict is S and "no sign of instability" not in o.summary
+    assert o.reasons == ["hill: of 20 draws, 1 unstable"] and "hill: of 20 draws, 1 unstable" in o.summary
+    o = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbody_ind(19, chaotic=1)})
+    assert o.verdict is S and o.reasons == ["N-body + MEGNO: of 20 draws, 1 chaotic"]
+
+
+def test_a_close_encounter_draw_is_always_reported() -> None:
+    """19 regular draws and 1 close encounter keep the N-body verdict 'stable' under the 95% rule."""
+    nbi = nbody_ind(19, 1)
+    assert nbi.verdict is S
+    o = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbi})
+    assert "no sign of instability" not in o.summary
+    assert o.reasons == ["N-body + MEGNO: of 20 draws, 1 with a close encounter or escape"]
+    # Kepler-19: the same N-body runs with marginal analytic criteria.
+    o = overall_verdict({"hill": ind("hill", M), "amd": ind("amd", M), "nbody": nbi})
+    assert o.verdict is M and "shows regular motion" not in o.summary
+    assert "19 are regular, 0 chaotic and 1 had close encounters or escapes" in o.summary
+
+
+def test_marginal_summary_names_the_actual_reason() -> None:
+    # ups And: every run is regular, but the outermost planet completes only 36 orbits.
+    nbi = nbody_ind(20, n_orbits_outermost=36)
+    assert nbi.verdict is M
+    o = overall_verdict({"hill": ind("hill", M), "amd": ind("amd", M), "nbody": nbi})
+    assert o.verdict is M and "chaotic or unstable" not in o.summary and "disagree" not in o.summary
+    assert "Every WHFast run is regular (the nominal parameters and all 20 draws)" in o.summary
+    assert "only 36 orbits" in o.summary and "(hill: marginal, amd: marginal)" in o.summary
+    # WHFast and IAS15 disagree on a nominal run that is otherwise regular.
+    nbi = nb.evaluate([result()] + [result(label="draw")] * 20, result(integrator="ias15", megno=4.0))
+    o = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbi})
+    assert o.verdict is M and "chaotic or unstable" not in o.summary
+    assert "WHFast and IAS15 disagree on the nominal run (regular vs chaotic)" in o.summary
+    # Draws that really are chaotic or unstable (HD 127195 with random phases).
+    o = overall_verdict(
+        {"hill": ind("hill", M), "amd": ind("amd", S), "nbody": nbody_ind(13, 1, 6, megno=9.8)}
+    )
+    assert "the nominal run is chaotic; of 20 draws, 13 are regular, 6 chaotic and 1 had" in o.summary
+    assert (
+        "Part of the parameter range allowed by the published uncertainties is chaotic or unstable"
+        in o.summary
+    )
+    # Draws below an upper limit are not "within the uncertainties".
+    o = overall_verdict(
+        {"hill": ind("hill", M), "amd": ind("amd", S), "nbody": nbody_ind(10, 5, 5)},
+        upper_limits=["mass of X b"],
+    )
+    assert "allowed by the published uncertainties and upper limits is chaotic or unstable" in o.summary
+    assert "upper limits (mass of X b)" in o.summary
+    # GJ 876: regular N-body motion in every run, analytic criteria failing.
+    o = overall_verdict({"hill": ind("hill", U), "amd": ind("amd", M), "nbody": nbody_ind(20)})
+    assert o.verdict is M and "regular motion for the nominal parameters and all 20 draws" in o.summary
+    assert "mean-motion resonances" in o.summary
+
+
 def test_check_system_end_to_end_small() -> None:
     s = two_planet_system(err=True)
     res = check_system(s, CheckSettings(orbits=300, draws=3, seed=1, jobs=1, n_samples=10), command="test")

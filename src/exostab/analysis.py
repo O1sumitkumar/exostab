@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 from .budget import Plan, plan
-from .indicators import IndicatorResult, Verdict
+from .indicators import AGREEMENT, IndicatorResult, Verdict
 from .indicators import amd as amd_indicator
 from .indicators import hill as hill_indicator
 from .indicators import megno as nbody_indicator
@@ -86,6 +86,78 @@ def upper_limit_inputs(system: System) -> list[str]:
     return out
 
 
+def _failed_draws(r: IndicatorResult) -> str | None:
+    """For an indicator with draws that are not stable, a line like "AMD: of 20 draws, 1 unstable"."""
+    d = r.draws
+    if d is None or d.stable == d.n:
+        return None
+    words = {Verdict.MARGINAL: "marginal", Verdict.UNSTABLE: "unstable", Verdict.INCONCLUSIVE: "inconclusive"}
+    if r.name == "nbody":
+        words |= {Verdict.MARGINAL: "chaotic", Verdict.UNSTABLE: "with a close encounter or escape"}
+    return f"{r.title}: of {d.n} draws, " + _join(
+        [f"{d.count(v)} {w}" for v, w in words.items() if d.count(v)]
+    )
+
+
+def _nbody_held(nb: IndicatorResult) -> list[str]:
+    """Why the N-body verdict cannot be stable although the WHFast runs are regular (see megno.evaluate)."""
+    nominal = nb.details.get("nominal") or {}
+    ias15 = nb.details.get("ias15") or {}
+    out = []
+    if ias15 and ias15.get("classification") != nominal.get("classification"):
+        out.append(
+            f"WHFast and IAS15 disagree on the nominal run ({nominal.get('classification')} vs "
+            f"{ias15.get('classification')})"
+        )
+    n_outer = nominal.get("n_orbits_outermost")
+    if (
+        nominal.get("status") == "completed"
+        and n_outer is not None
+        and n_outer < nbody_indicator.MIN_OUTER_ORBITS
+    ):
+        out.append(
+            f"the outermost planet completes only {n_outer:.0f} orbits, fewer than the "
+            f"{nbody_indicator.MIN_OUTER_ORBITS} needed to judge it (increase --orbits)"
+        )
+    return out
+
+
+def _all_regular(nb: IndicatorResult) -> bool:
+    """True if the nominal N-body run and every draw are regular."""
+    return nb.nominal_verdict is Verdict.STABLE and (nb.draws is None or nb.draws.stable == nb.draws.n)
+
+
+def _nbody_sentences(nb: IndicatorResult, allowed: str) -> list[str]:
+    """What the N-body runs found, for a marginal overall verdict, without claiming more than the counts."""
+    d = nb.draws
+    held = _nbody_held(nb)
+    if _all_regular(nb):
+        runs = "the nominal parameters" + (f" and all {d.n} draws" if d is not None else "")
+        if nb.verdict is Verdict.STABLE:
+            return [f"The N-body integration shows regular motion for {runs}."]
+        why = _join(held) if held else "see the N-body notes"
+        return [f"Every WHFast run is regular ({runs}), but the N-body verdict is only marginal: {why}."]
+    nominal = {
+        Verdict.STABLE: "regular",
+        Verdict.MARGINAL: "chaotic",
+        Verdict.UNSTABLE: "stopped by a close encounter or escape",
+        Verdict.INCONCLUSIVE: "inconclusive",
+    }[nb.nominal_verdict]
+    text = f"Direct integration: the nominal run is {nominal}"
+    if d is not None:
+        text += (
+            f"; of {d.n} draws, {d.stable} are regular, {d.marginal} chaotic and {d.unstable} had close "
+            "encounters or escapes" + (f" ({d.inconclusive} inconclusive)" if d.inconclusive else "")
+        )
+    out = [text + "."]
+    found = [w for w, k in (("chaotic", d.marginal), ("unstable", d.unstable)) if k] if d is not None else []
+    if found:
+        out.append(f"Part of the parameter range allowed by the {allowed} is {' or '.join(found)}.")
+    if held:
+        out.append(f"In addition, {_join(held)}.")
+    return out
+
+
 def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Sequence[str] = ()) -> Overall:
     """Conservative combination of the per-indicator verdicts.
 
@@ -102,7 +174,7 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
     uncertainty. A limit on a mass or an eccentricity is the worst case for stability, so a stable result
     still holds; an N-body instability, however, only constrains those values and gives "marginal". Without
     Monte Carlo draws (``--draws 0``) nothing was tested against the uncertainties, so the verdict is at most
-    "marginal".
+    "marginal". The summary is built from the draw counts and never claims more than they show.
     """
     nb = indicators["nbody"]
     others = [r for k, r in indicators.items() if k != "nbody"]
@@ -118,7 +190,10 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
         )
     n = nb.draws.n if nb.draws is not None else 0
     encounters = nb.draws.unstable if nb.draws is not None else 0
+    # Draws that are not stable although their indicator's verdict is (the 95% rule lets up to 5% through).
+    hidden = [f for r in indicators.values() if r.verdict is Verdict.STABLE and (f := _failed_draws(r))]
     limits = _join(upper_limits) if upper_limits else ""
+    allowed = "published uncertainties" + (" and upper limits" if upper_limits else "")
     caveats = [NO_DRAWS] if n == 0 else []
     extra = [f"Only upper limits are published for: {limits}."] if upper_limits else []
 
@@ -153,24 +228,36 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
                 summary="Every indicator is stable for the nominal parameters. " + NO_DRAWS,
                 reasons=caveats,
             )
-        return Overall(
-            verdict=Verdict.STABLE,
-            summary="All indicators agree: no sign of instability." + HORIZON,
-            reasons=[],
-        )
-    if nb.verdict is Verdict.STABLE:
-        summary = (
-            "The N-body integration shows regular motion, but the analytic criteria cannot guarantee "
-            "stability. This is typical of systems protected by mean-motion resonances or of compact systems "
-            "whose long-term stability is uncertain."
-        )
-    else:
-        summary = (
-            "Mixed evidence: part of the parameter range allowed by the uncertainties is chaotic or unstable, "
-            "or the indicators disagree."
+        if hidden:
+            summary = (
+                f"Every indicator is stable for the nominal parameters and for at least {AGREEMENT:.0%} of the "
+                f"{n} draws, but not for all of them ({'; '.join(hidden)})."
+            )
+        else:
+            summary = (
+                "All indicators agree: no sign of instability for the nominal parameters or any of the "
+                f"{n} draws."
+            )
+        return Overall(verdict=Verdict.STABLE, summary=summary + HORIZON, reasons=hidden)
+
+    sentences = _nbody_sentences(nb, allowed)
+    bad = [f"{r.title}: {r.verdict.value}" for r in others if r.verdict is not Verdict.STABLE]
+    if bad:
+        sentences.append(f"The other indicators cannot guarantee stability ({', '.join(bad)}).")
+        if nb.verdict is Verdict.STABLE and _all_regular(nb):
+            sentences.append(
+                "This is typical of systems protected by mean-motion resonances or of compact systems whose "
+                "long-term stability is uncertain."
+            )
+    if upper_limits:
+        sentences.append(
+            f"Some inputs are only published upper limits ({limits}): the nominal run takes each limit and the "
+            "draws are uniform below it."
         )
     return Overall(
-        verdict=Verdict.MARGINAL, summary=" ".join([summary, *caveats]), reasons=not_stable + caveats
+        verdict=Verdict.MARGINAL,
+        summary=" ".join(sentences + caveats),
+        reasons=not_stable + hidden + extra + caveats,
     )
 
 
