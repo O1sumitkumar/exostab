@@ -160,7 +160,11 @@ def run(real: Realization, config: RunConfig) -> RunResult:
             sample()
         for tc in checkpoints:
             # exact_finish_time=0: never shorten a step to land on the checkpoint, so sampling does not
-            # change the trajectory of a fixed-step integrator.
+            # change the trajectory of a fixed-step integrator. A step can therefore overshoot the next
+            # checkpoints when they are closer together than one step (short runs); those are skipped, because
+            # REBOUND would integrate backwards (with a negative dt) to reach them.
+            if tc <= sim.t:
+                continue
             sim.integrate(tc, exact_finish_time=0)
             sample()
     except (rebound.Collision, rebound.Encounter):

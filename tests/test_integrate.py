@@ -1,4 +1,5 @@
 import math
+from dataclasses import replace
 
 import pytest
 
@@ -55,6 +56,21 @@ def test_runs_are_deterministic() -> None:
     a = run(pair(ratio=1.3), RunConfig(n_orbits=2000, megno_seed=5))
     b = run(pair(ratio=1.3), RunConfig(n_orbits=2000, megno_seed=5))
     assert a.megno == b.megno and a.energy_error == b.energy_error
+
+
+@pytest.mark.parametrize("integrator", ["whfast", "ias15"])
+def test_sampling_never_integrates_backwards(integrator: str) -> None:
+    # 10 orbits with 400 samples: the samples are 0.025 orbits apart, closer than one step (1/30 orbit).
+    # Checkpoints a step has already passed are skipped instead of integrated to backwards.
+    config = RunConfig(n_orbits=10, integrator=integrator, n_samples=400)  # type: ignore[arg-type]
+    sampled, plain = run(pair(), config), run(pair(), replace(config, n_samples=0))
+    t = sampled.series["t"]
+    assert t == sorted(set(t))  # strictly increasing
+    assert sampled.t_end >= sampled.t_target and sampled.status == "completed"
+    # sampling leaves the trajectory alone
+    assert (sampled.t_end, sampled.megno) == (plain.t_end, plain.megno)
+    if integrator == "whfast":
+        assert sampled.dt == pytest.approx(0.1 / 30)
 
 
 def test_close_encounter_is_detected() -> None:
