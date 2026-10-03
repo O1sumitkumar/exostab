@@ -1,5 +1,8 @@
 name: Release
 
+# Pushing a tag vX.Y.Z builds the package, tests the built wheel, publishes it to PyPI (only when enabled) and
+# creates the GitHub release, which Zenodo archives. Setup and the release checklist: RELEASING.md.
+
 on:
   push:
     tags: ["v*"]
@@ -30,9 +33,53 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: notes.md
+
+  test:
+    # Nothing is published unless the fast suite and the CLI pass against the built wheel.
+    needs: build
+    name: wheel / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.14"]
+    env:
+      EXOSTAB_OFFLINE: "1"  # tests use the bundled snapshot, never the network
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Install the wheel with the test dependencies
+        run: |
+          wheel=$(ls dist/*.whl)
+          python -m pip install "$wheel[dev]"
+      - name: Ruff and mypy
+        run: |
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+          mypy
+      - name: Tests against the installed wheel
+        run: |
+          python -c "import exostab; assert 'site-packages' in exostab.__file__, exostab.__file__"
+          pytest
+      - name: CLI smoke test
+        run: |
+          exostab --version
+          exostab check "TOI-270" --offline --orbits 2000 --draws 3 --out smoke/
+          test -f smoke/report.json && test -f smoke/orbits.png && test -f smoke/megno.png
 
   pypi:
-    needs: build
+    needs: [build, test]
     # Runs once the PyPI trusted publisher exists and the repository variable PUBLISH_PYPI is "true"
     # (RELEASING.md); until then releases are published on GitHub only.
     if: vars.PUBLISH_PYPI == 'true'
@@ -50,8 +97,8 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   github-release:
-    needs: [build, pypi]
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.pypi.result != 'failure' }}
+    needs: [build, test, pypi]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.test.result == 'success' && needs.pypi.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write  # creating the release also triggers the Zenodo archive once the integration is enabled
@@ -61,11 +108,9 @@ jobs:
         with:
           name: dist
           path: dist/
-      - name: Release notes from CHANGELOG.md
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '/^## /{p = (index($0, "[" v "]") > 0)} p' CHANGELOG.md > notes.md
-          test -s notes.md
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
