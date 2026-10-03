@@ -43,6 +43,7 @@ from ..models import (
     System,
     Value,
 )
+from ..sampling import E_MAX
 from ..units import (
     MEARTH_IN_MSUN,
     MJUP_IN_MEARTH,
@@ -143,9 +144,9 @@ def _check_axis(name: str, a: Value, period_days: float, m_total_msun: float) ->
     rel_err = 0.5 * ((a.err_plus or 0.0) + (a.err_minus or 0.0)) / a.require()
     if abs(a.require() / a_kepler - 1) > max(AXIS_TOLERANCE, 3 * rel_err):
         raise SystemFileError(
-            f"{name}: semimajor_axis_au = {a.value:g} AU disagrees with period_days = {period_days:g} d, which "
-            f"gives {a_kepler:.4g} AU for the stellar and planet mass; give only one of them or check the "
-            "stellar mass"
+            f"{name}: semimajor_axis_au = {a.value:g} AU disagrees with period_days = {period_days:g} d, "
+            f"which gives {a_kepler:.4g} AU for the stellar and planet mass; give only one of them or check "
+            "the stellar mass"
         )
 
 
@@ -201,8 +202,8 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
     elif radius is not None:
         if "mass_kind" in raw and kind is not MassKind.ESTIMATED:
             raise SystemFileError(
-                f"{name}: mass_kind {kind.value!r} needs a mass; with radius_earth only, the mass is estimated "
-                "from the radius (leave out mass_kind or set it to estimated)"
+                f"{name}: mass_kind {kind.value!r} needs a mass; with radius_earth only, the mass is "
+                "estimated from the radius (leave out mass_kind or set it to estimated)"
             )
         try:
             m = mass_from_radius(radius.require())
@@ -265,6 +266,11 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
     # eccentricity and argument of periastron
     if "eccentricity" in raw:
         ecc = _value(raw["eccentricity"], reference=ref, where=f"{name}.eccentricity", allow_limit=True)
+        if ecc.require() > E_MAX:
+            raise SystemFileError(
+                f"{name}: eccentricity {ecc.value:g} is above {E_MAX:g}, the largest eccentricity exostab "
+                "integrates"
+            )
         if ecc.provenance is Provenance.UPPER_LIMIT:
             flags.append(
                 _flag(
@@ -297,8 +303,8 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
     if len(given) > 1:
         raise SystemFileError(f"{name}: give at most one of {given}")
     if given and given[0] in ("mean_anomaly_deg", "periastron_time_jd") and "omega_deg" not in raw:
-        # These place the planet relative to its periastron; without its direction (omega_deg, drawn at random)
-        # the planet's longitude would be random in every run while the report said the phase was set.
+        # These place the planet relative to its periastron; without its direction (omega_deg, drawn at
+        # random) the planet's longitude would be random in every run while the report said the phase was set.
         raise SystemFileError(
             f"{name}: {given[0]} needs omega_deg (the direction of the periastron); give omega_deg, or the "
             "mean longitude (mean_longitude_deg) instead"

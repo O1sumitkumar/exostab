@@ -51,7 +51,8 @@ def test_alternative_units_and_fields(tmp_path: Path) -> None:
 epoch_jd: 2450010.0
 star: {mass_msun: {value: 1.0, err_plus: 0.1, err_minus: 0.05}}
 planets:
-  - {name: b, semimajor_axis_au: {value: 0.1, err: 0.001}, radius_earth: 1.5, mean_anomaly_deg: 10, omega_deg: 5}
+  - {name: b, semimajor_axis_au: {value: 0.1, err: 0.001}, radius_earth: 1.5, mean_anomaly_deg: 10,
+     omega_deg: 5}
   - {name: c, semimajor_axis_au: 0.2, mass_msun: 3.0e-6, periastron_time_jd: 2450000.0, eccentricity: 0.1,
      omega_deg: 30}
 """,
@@ -90,6 +91,7 @@ planets:
             "at most one",
         ),
         (GOOD.replace("mass_earth: 5", "mass_earth: 5, eccentricity: 1.5"), SystemFileError, "eccentricity"),
+        (GOOD.replace("mass_earth: 5", "mass_earth: 5, eccentricity: 0.97"), SystemFileError, "above 0.95"),
         # a mean anomaly or a time of periastron places the planet relative to its periastron, whose direction
         # omega_deg gives; without it the planet's longitude would be random in every run
         (GOOD.replace("mass_earth: 5", "mass_earth: 5, mean_anomaly_deg: 30"), SystemFileError, "omega_deg"),
@@ -176,8 +178,8 @@ def test_upper_limit_mass_flag(tmp_path: Path) -> None:
 def test_upper_limits_only_on_planet_masses_and_eccentricities(
     tmp_path: Path, change: tuple[str, str]
 ) -> None:
-    # Draws are uniform between 0 and an upper limit: meaningful for a planet mass or an eccentricity, not for a
-    # stellar mass, a period, an angle or an absolute time, which used to be accepted without any flag.
+    # Draws are uniform between 0 and an upper limit: meaningful for a planet mass or an eccentricity, not
+    # for a stellar mass, a period, an angle or an absolute time, which used to be accepted without any flag.
     with pytest.raises(SystemFileError, match="upper_limit"):
         load_system_file(write(tmp_path, GOOD.replace(*change)))
 

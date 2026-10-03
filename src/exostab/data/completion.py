@@ -18,12 +18,13 @@ Mass
     "Msini" is a minimum mass (used as the mass, i.e. sin i = 1, unless ``--inclination-prior`` is
     given), except for transiting planets, whose sin i is close to 1; a lower limit on the mass of a
     non-transiting planet is a minimum mass; "M-R relationship" was estimated by the archive from the
-    radius ("estimated"). An upper limit is used as the value in the nominal run. A missing mass is estimated from the radius with the
-    Chen & Kipping (2017) relation where that relation can be inverted.
+    radius ("estimated"). An upper limit is used as the value in the nominal run. A missing mass is
+    estimated from the radius with the Chen & Kipping (2017) relation where that relation can be inverted.
 Eccentricity
     Missing -> 0 ("assumed"). Published as exactly 0 without an uncertainty -> also "assumed" and
     flagged: such a value is a circular orbit fixed in the source's fit, not a measurement. An upper
-    limit is used as the value in the nominal run.
+    limit is used as the value in the nominal run. Above ``sampling.E_MAX`` (0.95) the system is
+    rejected.
 Argument of periastron
     Missing -> drawn uniformly for every run ("randomized").
 Orbital phase
@@ -47,6 +48,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 from ..models import CompletionFlag, MassKind, Phase, PhaseKind, Planet, Provenance, Star, Value
+from ..sampling import E_MAX
 from ..units import MEARTH_IN_MSUN, period_from_semimajor_axis, years_to_days
 from .archive import ARCHIVE_URL
 from .massradius import MassRadiusError, mass_from_radius
@@ -170,8 +172,8 @@ def complete_star(rows: Sequence[Row]) -> tuple[Star, list[CompletionFlag]]:
     chosen = star_mass_row(rows)
     if chosen is None and limits:
         raise IncompleteSystemError(
-            f"{host}: the archive gives only a limit on the stellar mass; supply a measured stellar mass with "
-            "--from-file."
+            f"{host}: the archive gives only a limit on the stellar mass; supply a measured stellar mass "
+            "with --from-file."
         )
     if chosen is None:
         raise IncompleteSystemError(f"{host}: the stellar mass is missing; supply it with --from-file.")
@@ -229,9 +231,9 @@ def _period(row: Row, name: str, m_star: float, flags: list[CompletionFlag]) -> 
         # does not say which. A projected separation gives neither the orbit nor the order of the planets.
         raise IncompleteSystemError(
             f"{name}: no orbital period is published, and for a planet found by "
-            f"{str(row['discoverymethod']).lower()} the archive's pl_orbsmax = {a:g} AU can be the projected "
-            "separation on the sky rather than the semi-major axis, so the orbit cannot be placed. Supply the "
-            "orbit with --from-file if a published orbit fit exists."
+            f"{str(row['discoverymethod']).lower()} the archive's pl_orbsmax = {a:g} AU can be the "
+            "projected separation on the sky rather than the semi-major axis, so the orbit cannot be placed. "
+            "Supply the orbit with --from-file if a published orbit fit exists."
         )
     m_p = (row.get("pl_bmasse") or 0.0) * MEARTH_IN_MSUN
     P = years_to_days(period_from_semimajor_axis(a, m_star + m_p))
@@ -364,9 +366,9 @@ def _mass(row: Row, name: str, flags: list[CompletionFlag]) -> tuple[Value, Mass
                 name,
                 "pl_bmasse",
                 "mass_lower_limit",
-                "The mass is a lower limit and the planet does not transit (inclination unknown); the limit is "
-                "treated as a minimum mass m sin i: used as the mass (sin i = 1) unless --inclination-prior is "
-                "set.",
+                "The mass is a lower limit and the planet does not transit (inclination unknown); the "
+                "limit is treated as a minimum mass m sin i: used as the mass (sin i = 1) unless "
+                "--inclination-prior is set.",
             )
         )
     elif row.get("pl_bmasselim") == -1:
@@ -385,6 +387,11 @@ def _eccentricity(row: Row, name: str, flags: list[CompletionFlag]) -> Value:
     v = _value(row, "pl_orbeccen")
     if not 0 <= v.require() < 1:
         raise IncompleteSystemError(f"{name}: published eccentricity {v.value} is outside [0, 1).")
+    if v.require() > E_MAX:
+        raise IncompleteSystemError(
+            f"{name}: published eccentricity {v.value:g} is above {E_MAX:g}, the largest eccentricity "
+            "exostab integrates; the system is not checked rather than checked with a different orbit."
+        )
     no_errors = not (row.get("pl_orbeccenerr1") or row.get("pl_orbeccenerr2"))  # missing or zero
     if v.value == 0 and no_errors and row.get("pl_orbeccenlim") not in (1, -1):
         # A measured eccentricity has an uncertainty; exactly 0 without one is a circular orbit that the
@@ -482,8 +489,9 @@ def _phase(row: Row, name: str, duplicated_tper: bool, flags: list[CompletionFla
         )
         return Phase(kind=PhaseKind.PERIASTRON, value=_value(row, "pl_orbtper"))
     if usable_tper:
-        # A time of periastron fixes the mean anomaly, but the periastron direction (omega) is drawn at random,
-        # so the planet's mean longitude, and every angle between planets, would be random in every run.
+        # A time of periastron fixes the mean anomaly, but the periastron direction (omega) is drawn at
+        # random, so the planet's mean longitude, and every angle between planets, would be random in
+        # every run.
         why = (
             "a time of periastron is published but not the argument of periastron, so the direction of the "
             "periastron, and with it the planet's position relative to the other planets, is unknown"

@@ -224,6 +224,12 @@ def test_limits() -> None:
 def test_bad_eccentricity_rejected() -> None:
     with pytest.raises(IncompleteSystemError, match="outside"):
         system_from_rows(pair(pl_orbeccen=1.2), INFO)
+    # above the 0.95 cap the runs would silently use 0.95 while the report showed the published value
+    with pytest.raises(IncompleteSystemError, match=r"above 0\.95"):
+        system_from_rows(pair(pl_orbeccen=0.97), INFO)
+    with pytest.raises(IncompleteSystemError, match=r"above 0\.95"):
+        system_from_rows(pair(pl_orbeccen=0.97, pl_orbeccenlim=1), INFO)
+    assert system_from_rows(pair(pl_orbeccen=0.95), INFO).planets[1].eccentricity.value == 0.95
 
 
 @pytest.mark.parametrize(
@@ -243,8 +249,9 @@ def test_mass_provenance(prov: str, kind: MassKind, rule: str | None) -> None:
 
 
 def test_mass_kind_uses_transit_and_limit_flags() -> None:
-    # A transiting planet has i close to 90 deg, so its archive "Msini" is its mass (Kepler-9 d: i = 89.38 deg);
-    # it must not be called a minimum mass or be scaled by the inclination prior while its siblings are not.
+    # A transiting planet has i close to 90 deg, so its archive "Msini" is its mass (Kepler-9 d:
+    # i = 89.38 deg); it must not be called a minimum mass or be scaled by the inclination prior while its
+    # siblings are not.
     s = system_from_rows(pair(pl_bmassprov="Msini", tran_flag=1, pl_orbincl=89.38), INFO)
     assert s.planets[1].mass_kind is MassKind.TRUE
     c_flags = {f.rule: f.message for f in s.flags if f.planet == "Host c"}
@@ -305,8 +312,8 @@ def test_star_rules() -> None:
 
 @pytest.mark.parametrize("lim", [1, -1])
 def test_stellar_mass_limits_are_not_used(lim: int) -> None:
-    # An upper limit used to be drawn uniformly between 0 and the limit (masses near 0, the planet-to-star mass
-    # ratios inflated many times) under a flag saying "the limit is used". A limit is not a stellar mass.
+    # An upper limit used to be drawn uniformly between 0 and the limit (masses near 0, the planet-to-star
+    # mass ratios inflated many times) under a flag saying "the limit is used". A limit is not a stellar mass.
     with pytest.raises(IncompleteSystemError, match="only a limit on the stellar mass"):
         system_from_rows([row("Host b", st_masslim=lim), row("Host c", pl_orbper=25.0, st_masslim=lim)], INFO)
     # a measured value in another row is used, and the ignored limit is reported

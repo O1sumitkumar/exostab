@@ -65,6 +65,14 @@ def test_eccentricity_capped() -> None:
     assert max(r.bodies[1].e for r in sampling.realizations(s, 100, seed=0)) <= sampling.E_MAX
 
 
+def test_nominal_eccentricity_above_the_cap_is_refused() -> None:
+    # The nominal run used to be capped silently: the verdict was for e = 0.95 while the card showed 0.97.
+    s = two_planet_system()
+    p = s.planets[1].model_copy(update={"eccentricity": V(0.97)})
+    with pytest.raises(ValueError, match=r"above 0\.95"):
+        sampling.realizations(s.model_copy(update={"planets": (s.planets[0], p)}), 0, seed=0)
+
+
 def test_true_to_mean_anomaly() -> None:
     assert sampling.true_to_mean_anomaly(0.0, 0.3) == pytest.approx(0.0)
     assert sampling.true_to_mean_anomaly(math.pi, 0.3) == pytest.approx(math.pi)

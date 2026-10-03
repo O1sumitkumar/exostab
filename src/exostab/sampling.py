@@ -9,8 +9,9 @@ Sampling rules (also listed in ``docs/data-assumptions.md``):
 
 * A value with asymmetric errors is drawn from a split normal distribution (one Gaussian half-width
   above the value and another below it). Values without published errors are held fixed.
-* Eccentricities below zero are set to zero, as in the HD 127195 Research Note; eccentricities are
-  capped at ``E_MAX``. Masses, periods and the stellar mass are redrawn until positive.
+* Eccentricities below zero are set to zero, as in the HD 127195 Research Note; drawn eccentricities
+  are capped at ``E_MAX``, and a nominal eccentricity above it is refused (the loaders reject such
+  systems). Masses, periods and the stellar mass are redrawn until positive.
 * Upper limits, allowed only on planet masses and eccentricities: the nominal run uses the limit itself
   (the worst case for stability); draws are uniform between zero and the limit. An upper limit on any
   other value (stellar mass, period, angle, reference time) is refused.
@@ -144,8 +145,8 @@ def choose_epoch(system: System) -> float | None:
     ]
     if angles and any(p.phase.kind in (PhaseKind.TRANSIT, PhaseKind.PERIASTRON) for p in system.planets):
         raise ValueError(
-            f"{system.name}: epoch_jd is required when mean anomalies or longitudes ({', '.join(angles)}) are "
-            "combined with transit or periastron times"
+            f"{system.name}: epoch_jd is required when mean anomalies or longitudes "
+            f"({', '.join(angles)}) are combined with transit or periastron times"
         )
     times = [
         p.phase.value.require()
@@ -240,7 +241,13 @@ def realize(
         m_earth = pick(p.mass_earth, positive=True)
         if p.mass_kind is MassKind.MINIMUM:
             m_earth /= sin_i
-        e = min(max(pick(p.eccentricity), 0.0), E_MAX)
+        e = pick(p.eccentricity)
+        if not draw and e > E_MAX:
+            # Capping the nominal run would check a different orbit from the one the report shows.
+            raise ValueError(
+                f"{p.name}: eccentricity {e:g} is above {E_MAX:g}, the largest exostab integrates"
+            )
+        e = min(max(e, 0.0), E_MAX)
         if p.omega_deg.is_known:
             omega = math.radians(pick(p.omega_deg)) % TWO_PI
         else:
