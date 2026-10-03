@@ -18,10 +18,14 @@ jobs:
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check --strict dist/*
-      - name: Tag matches the package version
+      - name: Tag, package version, CITATION.cff and CHANGELOG.md agree
         run: |
           version=$(python -c "import re,pathlib; print(re.search(r'__version__ = \"(.+?)\"', pathlib.Path('src/exostab/__init__.py').read_text()).group(1))")
-          test "v$version" = "${GITHUB_REF_NAME}"
+          test "v$version" = "${GITHUB_REF_NAME}" || { echo "::error::tag ${GITHUB_REF_NAME}, but __version__ is $version"; exit 1; }
+          grep -qxF "version: \"$version\"" CITATION.cff || { echo "::error::CITATION.cff does not give version \"$version\""; exit 1; }
+          grep -qE '^date-released: "?[0-9]{4}-[0-9]{2}-[0-9]{2}"?$' CITATION.cff || { echo "::error::CITATION.cff has no date-released"; exit 1; }
+          awk -v v="$version" '/^## /{p = (index($0, "[" v "]") > 0)} p' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "::error::CHANGELOG.md has no section [$version]"; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
           name: dist

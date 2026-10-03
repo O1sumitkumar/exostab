@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import shutil
 import subprocess
 import sys
@@ -9,8 +10,24 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
+from packaging.version import Version
+
+from exostab import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_citation_names_the_package_version() -> None:
+    # GitHub's "Cite this repository" and Zenodo read CITATION.cff. A release must cite itself (release.yml
+    # checks the same for the tag); a development version may still cite the release before it.
+    cff = yaml.safe_load((ROOT / "CITATION.cff").read_text(encoding="utf-8"))
+    cited, version = Version(str(cff["version"])), Version(__version__)
+    if version.is_prerelease:  # for example 1.1.0.dev0
+        assert cited <= version
+    else:
+        assert cited == version
+    datetime.date.fromisoformat(str(cff["date-released"]))
 
 
 def pyproject() -> dict[str, Any]:
