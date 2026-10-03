@@ -21,6 +21,7 @@ from .names import AmbiguousNameError, SystemNotFoundError, resolve_host
 from .store import TableInfo, load_rows
 
 __all__ = [
+    "AmbiguousNameError",
     "IncompleteSystemError",
     "SystemFileError",
     "SystemNotFoundError",

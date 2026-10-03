@@ -127,7 +127,7 @@ def star_mass_row(rows: Sequence[Row]) -> Row | None:
 
 
 def _star_mass_entry(row: Row) -> str:
-    """ "0.56 +0.06/-0.06 from Xie 2014" (solar masses)."""
+    """One stellar-mass entry in words, e.g. "0.56 +0.06/-0.06 from Xie 2014" (solar masses)."""
     text = f"{row['st_mass']:g}"
     e1, e2 = row.get("st_masserr1"), row.get("st_masserr2")
     if e1 is not None and e2 is not None:
