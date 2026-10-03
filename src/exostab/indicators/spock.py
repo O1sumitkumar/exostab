@@ -15,7 +15,13 @@ but never unstable on its own (only direct integration can). An estimate of exac
 integration already went unstable.
 
 Domain. SPOCK was trained on compact three-planet systems with planet-to-star mass ratios of 1e-7 to 1e-4 and
-adjacent spacings up to about 30 mutual Hill radii; the report warns when a system lies outside that range.
+adjacent separations sampled "in the range from [0,30] R_H", in SPOCK's own mutual Hill radius
+"R_H = a_i ((m_i+m_{i+1})/M_star)^{1/3}, where a_i is the semimajor axis of the inner planet in the pair"
+(Tamayo et al. 2020, Eq. 1). That radius has no factor 3 and uses the inner semi-major axis, unlike the
+Chambers et al. (1996) radius of the Hill indicator, so the two spacings differ by a factor that depends on the
+masses and the spacing (30 of SPOCK's radii are 27.3 of the Hill indicator's for two planets of 3e-5 M_* each,
+and 36.4 for 1e-6). The report warns when a mass ratio lies outside the training range or when a spacing, measured in SPOCK's
+convention, exceeds 30.
 """
 
 from __future__ import annotations
@@ -28,11 +34,10 @@ from typing import Any
 
 from ..sampling import Realization
 from . import DrawStats, IndicatorResult, Verdict, combine
-from .hill import pair_table
 
 THRESHOLD = 0.34  # Tamayo et al. (2020): 10% false-positive rate on the resonant hold-out set
 MASS_RATIO_RANGE = (1e-7, 1e-4)
-MAX_SPACING = 30.0  # mutual Hill radii
+MAX_SPACING = 30.0  # in SPOCK's mutual Hill radii (Tamayo et al. 2020, Eq. 1), see spock_spacings()
 WORKER = Path(__file__).with_name("spock_worker.py")
 REFERENCES = ["tamayo2020"]
 
@@ -83,6 +88,22 @@ def classify(p: float) -> Verdict:
     return Verdict.STABLE if p >= THRESHOLD else Verdict.UNSTABLE
 
 
+def spock_spacings(real: Realization) -> list[tuple[str, float]]:
+    """Adjacent spacings (a_{i+1} - a_i) / R_H with SPOCK's R_H = a_i ((m_i + m_{i+1}) / M_*)^(1/3).
+
+    This is Tamayo et al. (2020, Eq. 1), the convention of SPOCK's training set, not the mutual Hill radius
+    ((m_i + m_{i+1}) / (3 M_*))^(1/3) (a_i + a_{i+1}) / 2 of the Hill indicator.
+    """
+    a = real.semi_major_axes()
+    out = []
+    for k in range(len(real.bodies) - 1):
+        b1, b2 = real.bodies[k], real.bodies[k + 1]
+        a1, a2 = float(a[k]), float(a[k + 1])
+        r_hill = a1 * ((b1.m + b2.m) / real.m_star) ** (1 / 3)
+        out.append((f"{b1.name} / {b2.name}", (a2 - a1) / r_hill))
+    return out
+
+
 def domain_warnings(real: Realization) -> list[str]:
     notes = []
     lo, hi = MASS_RATIO_RANGE
@@ -91,10 +112,11 @@ def domain_warnings(real: Realization) -> list[str]:
         notes.append(
             f"Planet-to-star mass ratio outside SPOCK's training range ({lo:g}-{hi:g}) for: {', '.join(outside)}."
         )
-    wide = [r["pair"] for r in pair_table(real) if r["separation_hill"] > MAX_SPACING]
+    wide = [f"{pair} ({d:.1f})" for pair, d in spock_spacings(real) if d > MAX_SPACING]
     if wide:
         notes.append(
-            f"Separated by more than {MAX_SPACING:g} mutual Hill radii (outside SPOCK's training range): "
+            f"Separated by more than {MAX_SPACING:g} mutual Hill radii in SPOCK's convention "
+            "(R_H = a_i ((m_i + m_i+1)/M★)^(1/3), Tamayo et al. 2020), outside its training range: "
             + ", ".join(wide)
             + "."
         )
