@@ -4,22 +4,24 @@
     streamlit run streamlit_app.py
 
 Search a system, edit its parameters, choose a time budget and run the same analysis as ``exostab check``.
-Results are cached by a hash of every input, so a repeated view (or a shared link opened on the same server)
-is instant. Integrations run in a single process: hosted apps have one or two CPUs, and a process pool inside
-a Streamlit server is fragile.
+The run length chosen for a budget and the results are cached by a hash of every input, so a repeated view
+(or a shared link opened on the same server) is instant. Integrations run in a single process: hosted apps
+have one or two CPUs, and a process pool inside a Streamlit server is fragile. A shared link's run length is
+used only if its estimated cost on this server is within the largest time budget.
 """
 
 from __future__ import annotations
 
 import io
 import json
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from typing import Any
 
 import streamlit as st
 
 from .. import __version__
 from ..analysis import CheckResult, CheckSettings, check_system, settings_for_budget
+from ..budget import estimate_seconds
 from ..data import IncompleteSystemError, load_rows, system_from_rows
 from ..data.archive import ArchiveError, group_by_host
 from ..data.names import SystemNotFoundError, resolve_host
@@ -78,19 +80,70 @@ def _system(source: str, name: str) -> System:
     return system_from_rows(hosts[host], TableInfo(kind=kind, retrieved_utc=retrieved, path=None, note=note))  # type: ignore[arg-type]
 
 
+@st.cache_data(show_spinner=False, max_entries=256)
+def _plan(system_json: str, settings_json: str) -> tuple[float, int, float, float]:
+    """Orbits and draws chosen for the time budget on this server, and the measured seconds per orbit of
+    WHFast and IAS15. Cached by its inputs, because the choice depends on the measured speed."""
+    system = System.model_validate_json(system_json)
+    s = json.loads(settings_json)
+    base = CheckSettings(seed=s["seed"], inclination_prior=s["prior"], jobs=1)
+    _, p = settings_for_budget(system, float(s["budget_s"]), base)
+    return p.orbits, p.draws, p.whfast_s_per_orbit, p.ias15_s_per_orbit
+
+
+def _run_settings(state: AppState, system_json: str) -> tuple[dict[str, Any], str | None]:
+    """Settings of the run and a note for the user.
+
+    The run length is the one chosen for the time budget on this server, unless the state already carries
+    one (a shared link, or the previous run while parameters are edited) whose estimated cost here is within
+    BUDGET_MAX; budget_s is recorded only when the budget chose the run length. The cache key of the run is
+    computed from these resolved settings, so the view after a budget run finds its result.
+    """
+    budget = {"seed": state.seed, "prior": state.prior, "budget_s": state.budget_s}
+    orbits, draws, s_wh, s_ias = _plan(system_json, json.dumps(budget, sort_keys=True))
+    budget_s: float | None = state.budget_s
+    note = None
+    if (
+        state.orbits is not None
+        and state.draws is not None
+        and (state.orbits, state.draws) != (orbits, draws)
+    ):
+        cost = estimate_seconds(state.orbits, state.draws, s_wh, s_ias, workers=1)
+        if cost <= BUDGET_MAX:
+            orbits, draws, budget_s = state.orbits, state.draws, None
+        else:
+            note = (
+                f"The requested run ({state.orbits:,.0f} orbits, {state.draws} draws) would take about "
+                f"{cost:,.0f} s on this server, more than the {BUDGET_MAX} s limit, so the run length was "
+                f"chosen for the {state.budget_s:g} s budget instead."
+            )
+    settings = {
+        "seed": state.seed,
+        "prior": state.prior,
+        "budget_s": budget_s,
+        "orbits": orbits,
+        "draws": draws,
+        "spock": state.spock,
+    }
+    return settings, note
+
+
 @st.cache_data(show_spinner=False, max_entries=64)
 def _run(system_json: str, settings_json: str, key: str) -> CheckResult:
     """The analysis, cached by the input hash ``key`` (the JSON arguments are the inputs themselves)."""
     system = System.model_validate_json(system_json)
     s = json.loads(settings_json)
     spock = spock_python() if s.get("spock") else None
-    base = CheckSettings(
-        seed=s["seed"], inclination_prior=s["prior"], jobs=1, n_samples=300, spock_python=spock
+    settings = CheckSettings(
+        orbits=s["orbits"],
+        draws=s["draws"],
+        seed=s["seed"],
+        inclination_prior=s["prior"],
+        jobs=1,
+        n_samples=300,
+        budget_s=s["budget_s"],
+        spock_python=spock,
     )
-    if s["orbits"] is not None and s["draws"] is not None:
-        settings = replace(base, orbits=s["orbits"], draws=s["draws"])
-    else:
-        settings, _ = settings_for_budget(system, float(s["budget_s"]), base)
     result = check_system(system, settings, command=f"exostab web app {__version__} (input {key[:12]})")
     result.extra["input_hash"] = key
     return result
@@ -358,17 +411,13 @@ def main() -> None:
         state.orbits = state.draws = None
     if run_clicked or state.run:
         state.run = True
-        settings = {
-            "seed": state.seed,
-            "prior": state.prior,
-            "budget_s": state.budget_s,
-            "orbits": state.orbits,
-            "draws": state.draws,
-            "spock": state.spock,
-        }
-        key = input_hash(modified, settings)
+        system_json = modified.model_dump_json()
         with st.spinner("Integrating… (cached results appear instantly)"):
-            result = _run(modified.model_dump_json(), json.dumps(settings, sort_keys=True), key)
+            settings, note = _run_settings(state, system_json)
+            key = input_hash(modified, settings)
+            result = _run(system_json, json.dumps(settings, sort_keys=True), key)
+        if note:
+            st.warning(note)
         _results(result, state)
     st.query_params.from_dict(encode_state(state))
     st.divider()

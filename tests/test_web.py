@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -205,3 +206,101 @@ def test_app_rejects_circumbinary_and_reports_json() -> None:
         check_system(load_system("Kepler-36"), CheckSettings(orbits=200, draws=1, jobs=1)).report.to_json()
     )
     assert rep["settings"]["orbits"] == 200
+
+
+@pytest.fixture
+def fake_budget(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+    """The web app with a fixed, cheap budget plan (200 orbits, 1 draw; 1e-3 and 1e-2 s per orbit for WHFast
+    and IAS15) and a record of every analysis it runs (orbits, draws, budget_s)."""
+    import streamlit as st
+
+    import exostab.web.app as web_app
+    from exostab.budget import Plan
+
+    calls: list[tuple[float, int, float | None]] = []
+    check = web_app.check_system
+
+    def counting_check(system, settings, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((settings.orbits, settings.draws, settings.budget_s))
+        assert settings.orbits <= 1e3, "this test must not integrate long runs"
+        return check(system, settings, **kwargs)
+
+    def plan(system, budget_s, base):  # type: ignore[no-untyped-def]
+        p = Plan(
+            orbits=200.0,
+            draws=1,
+            budget_s=budget_s,
+            estimated_s=1.0,
+            whfast_s_per_orbit=1e-3,
+            ias15_s_per_orbit=1e-2,
+        )
+        return replace(base, orbits=p.orbits, draws=p.draws, budget_s=budget_s), p
+
+    st.cache_data.clear()
+    monkeypatch.setattr(web_app, "check_system", counting_check)
+    monkeypatch.setattr(web_app, "settings_for_budget", plan)
+    yield calls
+    st.cache_data.clear()
+
+
+def _caption(at: AppTest) -> str:
+    return next(c.value for c in at.caption if c.value.startswith("N-body:"))
+
+
+def test_budget_run_is_not_recomputed(fake_budget) -> None:  # type: ignore[no-untyped-def]
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.query_params.update({"system": "Kepler-36", "source": "snapshot", "budget": "15", "seed": "4242"})
+    at.run()
+    next(b for b in at.button if b.label == "Run").click().run()
+    assert not at.exception, at.exception
+    assert fake_budget == [(200.0, 1, 15.0)]
+    caption = _caption(at)
+    assert "chosen for a 15 s budget" in caption
+    # a rerun with the same inputs (any widget interaction) finds the cached result: same report and hash
+    at.run()
+    assert fake_budget == [(200.0, 1, 15.0)] and _caption(at) == caption
+    # so does the link the app wrote, opened in a new session on the same server
+    link = {k: at.query_params[k][0] for k in at.query_params}
+    assert link["orbits"] == "200" and link["draws"] == "1" and link["run"] == "1"
+    at2 = AppTest.from_file(APP, default_timeout=120)
+    at2.query_params.update(link)
+    at2.run()
+    assert not at2.exception, at2.exception
+    assert fake_budget == [(200.0, 1, 15.0)] and _caption(at2) == caption
+
+
+def test_link_run_length_is_limited_by_its_cost(fake_budget) -> None:  # type: ignore[no-untyped-def]
+    # 1e5 orbits and 100 draws pass the static checks (the longest preset), but at the measured speed they
+    # would take about 1,000 s here: the run length chosen for the link's budget is used instead
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.query_params.update(
+        {
+            "system": "Kepler-36",
+            "source": "snapshot",
+            "budget": "20",
+            "orbits": "1e5",
+            "draws": "100",
+            "run": "1",
+        }
+    )
+    at.run()
+    assert not at.exception, at.exception
+    assert fake_budget == [(200.0, 1, 20.0)]
+    assert any("more than the 120 s limit" in w.value for w in at.warning)
+    assert "chosen for a 20 s budget" in _caption(at)
+    # an affordable run length from a link is used as given; no budget chose it here, so none is recorded
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.query_params.update(
+        {
+            "system": "Kepler-36",
+            "source": "snapshot",
+            "budget": "20",
+            "orbits": "300",
+            "draws": "2",
+            "run": "1",
+        }
+    )
+    at.run()
+    assert not at.exception, at.exception
+    assert fake_budget[-1] == (300.0, 2, None)
+    assert "budget" not in _caption(at)
