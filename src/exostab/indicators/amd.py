@@ -45,6 +45,19 @@ Mean-motion-resonance overlap (Petit, Laskar & Boué 2017)
     alpha < alpha_R and C_MMR for alpha > alpha_R, alpha_R being the root of
     3^6 (1 - alpha)^7 - 3^2 2^9 r eps (1 - alpha)^3 - 2^14 (r eps)^2 = 0.
 
+    Domain. C_MMR "was obtained thanks to the assumption that alpha was close to 1. Particularly, it
+    makes no sense to talk about first-order MMR overlap for alpha<0.63 which corresponds to the center of
+    the MMR 2:1. Therefore, the collision criterion should be used for small alpha" (Petit et al. 2017,
+    Sect. 4.2). For their catalogue they "discard systems such that a pair of planets has
+    eps > eps_lim = 8.20e-3", for which alpha_cir lies below the 2:1 resonance (Sect. 5.1). For
+    eps > 3.1e-3, alpha_R is below 2^(-2/3) = 0.630, so the switching rule alone would apply C_MMR to
+    pairs wide of the 2:1 resonance. exostab therefore uses C_MMR only for eps <= eps_lim and
+    alpha > max(alpha_R, 2^(-2/3)), and C_c otherwise. A pair with eps > eps_lim, or with
+    alpha_R < alpha <= 2^(-2/3), lies outside the domain in which either criterion was validated: its
+    beta is computed with C_c and reported, but the system is never called AMD-stable (at most
+    marginal). eps_lim = 8.11e-3 is the exact root of alpha_cir(eps) = 2^(-2/3); the paper's 8.20e-3
+    follows from the rounded 1.46 and 0.63.
+
 Hill stability in the AMD framework (Petit, Laskar & Boué 2018)
     For two planets (eps = (m + m') / M_*), the pair is Hill stable if its relative AMD C / Lambda' is below
 
@@ -55,7 +68,7 @@ Hill stability in the AMD framework (Petit, Laskar & Boué 2018)
 
 Verdicts
     * stable: strongly AMD-stable with C = 2 C_p (all beta < 1, including the MMR-overlap refinement, and
-      beta_S < 1);
+      beta_S < 1), with every pair inside the domain of Petit et al. (2017);
     * unstable: a two-planet system that is neither AMD-stable nor Hill stable even for exactly coplanar
       orbits (beta_p >= 1 and beta_H,p >= 1). The coplanar values are lower bounds for any inclinations, so
       the equipartition assumption is never used to strengthen a claim of instability;
@@ -81,6 +94,11 @@ R_MMR = 0.80199  # Petit et al. (2017), r = (K_1(2/3) + 2 K_0(2/3)) / pi
 # C = 2 C_p: the unknown mutual inclinations carry as much AMD as the eccentricities (equipartition;
 # Laskar & Petit 2017, Sect. 6; Petit et al. 2017, Sect. 5). See DECISIONS.md (D14).
 EQUIPARTITION = 2.0
+# Domain of the resonance-overlap criterion (Petit et al. 2017, Sects. 4.2 and 5.1): alpha above the centre
+# of the 2:1 resonance ("0.63"), and eps <= eps_lim, where alpha_cir(eps_lim) = 2^(-2/3) (8.11e-3; the
+# paper rounds it to 8.20e-3). See DECISIONS.md (D14).
+ALPHA_2_1 = 2 ** (-2 / 3)
+EPS_LIM = float(((1 - ALPHA_2_1) * 3 ** (6 / 7) / (4 * R_MMR ** (2 / 7))) ** 3.5)
 REFERENCES = ["laskar2017", "petit2017", "petit2018"]
 
 
@@ -137,10 +155,28 @@ def critical_amd_mmr(alpha: float, gamma: float, eps: float) -> float:
 
 
 def critical_amd(alpha: float, gamma: float, eps: float) -> tuple[float, str]:
-    """Piece-wise critical relative AMD of Petit et al. (2017) and which branch was used."""
-    if alpha > alpha_resonance_switch(eps):
+    """Piece-wise critical relative AMD of Petit et al. (2017) within its stated domain, and the branch used.
+
+    Their Eq. (amd_crit): C_c = C_c^coll for alpha < alpha_R and C_MMR for alpha > alpha_R; the resonance
+    branch is restricted to eps <= eps_lim and alpha above the 2:1 resonance (see the module docstring).
+    """
+    if eps <= EPS_LIM and alpha > max(alpha_resonance_switch(eps), ALPHA_2_1):
         return critical_amd_mmr(alpha, gamma, eps), "mmr_overlap"
     return critical_amd_collision(alpha, gamma), "collision"
+
+
+def outside_domain(alpha: float, eps: float) -> str | None:
+    """Why a pair lies outside the domain of Petit et al. (2017), or None if it does not.
+
+    "eps_above_limit": eps > eps_lim, a pair Petit et al. excluded from their sample;
+    "wide_of_2_1": alpha_R < alpha <= 2^(-2/3), where their switching rule would use first-order resonance
+    overlap but their text says it makes no sense (only possible for 3.1e-3 < eps <= eps_lim).
+    """
+    if eps > EPS_LIM:
+        return "eps_above_limit"
+    if alpha_resonance_switch(eps) < alpha <= ALPHA_2_1:
+        return "wide_of_2_1"
+    return None
 
 
 def critical_amd_hill(alpha: float, gamma: float, eps: float) -> float:
@@ -176,7 +212,8 @@ def analyse(real: Realization) -> dict[str, Any]:
             "critical_branch": branch,
             "beta": EQUIPARTITION * beta_p,
             "beta_coplanar": beta_p,
-            "circular_overlap": alpha >= alpha_circular_overlap(eps),
+            "circular_overlap": eps <= EPS_LIM and alpha >= alpha_circular_overlap(eps),
+            "outside_domain": outside_domain(alpha, eps),
         }
         if len(real.bodies) == 2:
             ch = critical_amd_hill(alpha, gamma, eps)
@@ -197,7 +234,8 @@ def analyse(real: Realization) -> dict[str, Any]:
 def classify(real: Realization) -> Verdict:
     info = analyse(real)
     pairs = info["pairs"]
-    if all(p["beta"] < 1 for p in pairs) and info["beta_star"] < 1:
+    in_domain = not any(p["outside_domain"] for p in pairs)
+    if in_domain and all(p["beta"] < 1 for p in pairs) and info["beta_star"] < 1:
         return Verdict.STABLE
     # "unstable" uses the coplanar coefficients, which no choice of mutual inclinations can lower
     if len(pairs) == 1 and pairs[0]["beta_coplanar"] >= 1 and pairs[0]["beta_hill_coplanar"] >= 1:
@@ -213,11 +251,18 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
     pairs = info["pairs"]
     worst = max(pairs, key=lambda p: p["beta"])
     amd_stable = all(p["beta"] < 1 for p in pairs)
+    off = [p["pair"] for p in pairs if p["outside_domain"]]
     if v_nom is Verdict.STABLE:
         summary = (
             f"AMD-stable: largest β = {_b(worst['beta'])} ({worst['pair']}), so collisions are excluded "
             "in the secular approximation, provided the mutual inclinations carry no more AMD than the "
             "eccentricities."
+        )
+    elif amd_stable and off:
+        summary = (
+            f"β < 1 for every pair (largest {_b(worst['beta'])}), but {', '.join(off)} "
+            f"{'lies' if len(off) == 1 else 'lie'} outside the domain in which Petit et al. (2017) validated "
+            "the critical AMD, so AMD stability is not claimed."
         )
     elif amd_stable:
         summary = (
@@ -268,6 +313,20 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
     circ = [p["pair"] for p in pairs if p["circular_overlap"]]
     if circ:
         notes.append("Resonances overlap even for circular orbits for: " + ", ".join(circ) + ".")
+    heavy = [p["pair"] for p in pairs if p["outside_domain"] == "eps_above_limit"]
+    if heavy:
+        notes.append(
+            f"(m + m')/M★ is above ε_lim = {EPS_LIM * 1e3:.2f}e-3 for: {', '.join(heavy)}. Petit et al. (2017) "
+            "excluded such pairs, whose circular-orbit resonance-overlap limit lies wide of the 2:1 resonance; "
+            "β uses the collision criterion, and the AMD verdict is at most marginal."
+        )
+    wide = [p["pair"] for p in pairs if p["outside_domain"] == "wide_of_2_1"]
+    if wide:
+        notes.append(
+            "At or wide of the 2:1 resonance, where Petit et al. (2017) consider first-order resonance overlap "
+            f"meaningless although α > α_R: {', '.join(wide)}. β uses the collision criterion, and the AMD "
+            "verdict is at most marginal."
+        )
     return IndicatorResult(
         name="amd",
         title="AMD",

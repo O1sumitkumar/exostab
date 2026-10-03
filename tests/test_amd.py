@@ -105,6 +105,50 @@ def test_mmr_critical_amd_branches() -> None:
     assert amd.alpha_resonance_switch(10.0) == 0.0
 
 
+def test_mmr_overlap_restricted_to_petit_2017_domain() -> None:
+    """First-order overlap only above the 2:1 resonance and for eps <= eps_lim (Petit et al. 2017)."""
+    assert amd.ALPHA_2_1 == pytest.approx(0.63, abs=1e-3)
+    assert amd.alpha_circular_overlap(amd.EPS_LIM) == pytest.approx(amd.ALPHA_2_1, rel=1e-12)
+    assert amd.EPS_LIM == pytest.approx(8.20e-3, rel=0.015)  # the paper's value uses rounded constants
+    # eps = 5e-3: alpha_R = 0.58 lies below the 2:1 resonance; the switching rule alone would use C_MMR
+    eps = 5e-3
+    assert amd.alpha_resonance_switch(eps) < 0.60 < amd.ALPHA_2_1
+    assert amd.critical_amd(0.60, 1.0, eps) == (amd.critical_amd_collision(0.60, 1.0), "collision")
+    assert amd.outside_domain(0.60, eps) == "wide_of_2_1"
+    assert amd.critical_amd(0.70, 1.0, eps)[1] == "mmr_overlap" and amd.outside_domain(0.70, eps) is None
+    assert amd.critical_amd(0.40, 1.0, eps)[1] == "collision" and amd.outside_domain(0.40, eps) is None
+    # eps = 1e-2 > eps_lim: no resonance branch at all, every pair flagged
+    for alpha in (0.30, 0.55, 0.62, 0.80):
+        assert amd.critical_amd(alpha, 1.0, 1e-2)[1] == "collision"
+        assert amd.outside_domain(alpha, 1e-2) == "eps_above_limit"
+    # small eps: the domain covers every alpha
+    assert all(amd.outside_domain(alpha, 1e-4) is None for alpha in (0.1, 0.5, 0.63, 0.9))
+
+
+def test_pairs_outside_the_domain_are_never_amd_stable() -> None:
+    # circular giants just wide of the 2:1 (eps = 5e-3, alpha = 0.60): beta = 0 with either critical AMD
+    wide = real_of([2.5e-3, 2.5e-3], [1.0, 0.6**-1.5], [0.0, 0.0])
+    p = amd.analyse(wide)["pairs"][0]
+    assert p["critical_branch"] == "collision" and p["outside_domain"] == "wide_of_2_1" and p["beta"] == 0
+    assert amd.classify(wide) is Verdict.MARGINAL
+    r = amd.evaluate(wide, [])
+    assert "outside the domain" in r.summary and any("2:1" in n for n in r.notes)
+    # eps = 1e-2 > eps_lim at period ratio 2.05, where alpha_cir(eps) = 0.61 lies wide of the 2:1: no
+    # circular-overlap claim from an extrapolated formula, and no AMD-stable verdict either
+    heavy = real_of([5e-3, 5e-3], [1.0, 2.05], [0.0, 0.0])
+    p = amd.analyse(heavy)["pairs"][0]
+    assert p["alpha"] > amd.alpha_circular_overlap(1e-2)
+    assert not p["circular_overlap"] and p["outside_domain"] == "eps_above_limit"
+    assert amd.classify(heavy) is Verdict.MARGINAL
+    r = amd.evaluate(heavy, [])
+    assert not any("circular orbits" in n for n in r.notes) and any("ε_lim" in n for n in r.notes)
+    # HD 204313 b / e-like pair (eps = 0.0185, period ratio 3.6): collision criterion, at most marginal
+    far = real_of([9e-3, 9.5e-3], [1.0, 3.6], [0.05, 0.05])
+    p = amd.analyse(far)["pairs"][0]
+    assert p["critical_branch"] == "collision" and p["beta"] < 1
+    assert amd.classify(far) is Verdict.MARGINAL
+
+
 @given(e=st.floats(0, 0.4), de=st.floats(0.001, 0.3))
 def test_beta_grows_with_eccentricity_and_verdict_never_improves(e: float, de: float) -> None:
     order = {Verdict.STABLE: 0, Verdict.MARGINAL: 1, Verdict.UNSTABLE: 2}
