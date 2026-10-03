@@ -102,6 +102,18 @@ def test_version_and_help() -> None:
     assert r.exit_code == 0 and "check" in r.output and "catalog" in r.output
 
 
+def test_check_help_shows_the_run_length_defaults() -> None:
+    # the defaults are written into the help text by hand (the options default to None so that --budget can
+    # be detected); Rich must not swallow them as markup tags
+    r = runner.invoke(app, ["check", "--help"], env={"COLUMNS": "200"})
+    assert r.exit_code == 0
+    text = " ".join(r.output.split())
+    assert "innermost planet [default: 10000]." in text
+    assert "published uncertainties [default: 20]." in text
+    cli_md = (Path(__file__).resolve().parents[1] / "docs" / "cli.md").read_text()
+    assert "innermost planet [default: 10000]." in cli_md and "uncertainties [default: 20]." in cli_md
+
+
 def test_check_from_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     out = tmp_path / "out"
     args = ["check", "--from-file", str(EXAMPLES / "two_planet.yaml"), *FAST, "--out", str(out)]

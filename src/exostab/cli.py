@@ -108,7 +108,7 @@ RefreshOpt = Annotated[
     bool, typer.Option("--refresh", help="Query the archive again instead of using the disk cache.")
 ]
 OfflineOpt = Annotated[
-    bool, typer.Option("--offline", help="Use only the bundled offline snapshot (about 20 systems).")
+    bool, typer.Option("--offline", help="Use only the bundled offline snapshot (22 systems).")
 ]
 FileOpt = Annotated[
     Path | None,
@@ -128,13 +128,15 @@ def check(
     orbits: Annotated[
         float | None,
         typer.Option(
-            "--orbits", help="N-body run length, in orbits of the innermost planet [default: 10000].", min=10
+            "--orbits",
+            help="N-body run length, in orbits of the innermost planet \\[default: 10000].",
+            min=10,
         ),
     ] = None,
     draws: Annotated[
         int | None,
         typer.Option(
-            "--draws", help="Monte Carlo draws within the published uncertainties [default: 20].", min=0
+            "--draws", help="Monte Carlo draws within the published uncertainties \\[default: 20].", min=0
         ),
     ] = None,
     budget: Annotated[
