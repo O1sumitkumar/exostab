@@ -259,10 +259,15 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
             "eccentricities."
         )
     elif amd_stable and off:
+        star = (
+            f"; the AMD could also bring the innermost planet to the star (β_S = {_b(info['beta_star'])})"
+            if info["beta_star"] >= 1
+            else ""
+        )
         summary = (
             f"β < 1 for every pair (largest {_b(worst['beta'])}), but {', '.join(off)} "
             f"{'lies' if len(off) == 1 else 'lie'} outside the domain in which Petit et al. (2017) validated "
-            "the critical AMD, so AMD stability is not claimed."
+            f"the critical AMD, so AMD stability is not claimed{star}."
         )
     elif amd_stable:
         summary = (

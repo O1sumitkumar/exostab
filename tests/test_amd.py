@@ -147,6 +147,11 @@ def test_pairs_outside_the_domain_are_never_amd_stable() -> None:
     p = amd.analyse(far)["pairs"][0]
     assert p["critical_branch"] == "collision" and p["beta"] < 1
     assert amd.classify(far) is Verdict.MARGINAL
+    # a light inner planet next to a heavy pair: the summary keeps beta_S
+    ups = real_of([1e-8, 5e-3, 5e-3], [1.0, 8.0, 40.0], [0.0, 0.1, 0.0])
+    r = amd.evaluate(ups, [])
+    assert [p["outside_domain"] for p in r.details["pairs"]] == [None, "eps_above_limit"]
+    assert "outside the domain" in r.summary and "β_S = 1e+04" in r.summary
 
 
 @given(e=st.floats(0, 0.4), de=st.floats(0.001, 0.3))
