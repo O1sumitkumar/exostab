@@ -340,6 +340,13 @@ def test_phase_rules() -> None:
     # periastron time from the same publication
     s = system_from_rows(pair(pl_orbtper=2460001.0, pl_orbtper_reflink=REF_A), INFO)
     assert s.planets[1].phase.kind is PhaseKind.PERIASTRON
+    # ... but without the argument of periastron the periastron direction, and so the planet's longitude, is
+    # random in every run: the phase is random and the report must say so
+    s = system_from_rows(pair(pl_orbtper=2460001.0, pl_orbtper_reflink=REF_A, pl_orblper=None), INFO)
+    assert s.planets[1].phase.kind is PhaseKind.RANDOM
+    c_rules = {f.rule for f in s.flags if f.planet == "Host c"}
+    assert "phase_randomized" in c_rules and "phase_from_periastron" not in c_rules
+    assert any(f.planet == "Host c" and "argument of periastron" in f.message for f in s.flags)
     # identical periastron times across planets are treated as an epoch, not a periastron time
     rows = [
         row("Host b", pl_orbtper=2450602.093, pl_orbtper_reflink=REF_A),

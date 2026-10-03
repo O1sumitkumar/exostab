@@ -226,6 +226,13 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
     given = [k for k in _PHASE_KEYS if k in raw]
     if len(given) > 1:
         raise SystemFileError(f"{name}: give at most one of {given}")
+    if given and given[0] in ("mean_anomaly_deg", "periastron_time_jd") and "omega_deg" not in raw:
+        # These place the planet relative to its periastron; without its direction (omega_deg, drawn at random)
+        # the planet's longitude would be random in every run while the report said the phase was set.
+        raise SystemFileError(
+            f"{name}: {given[0]} needs omega_deg (the direction of the periastron); give omega_deg, or the "
+            "mean longitude (mean_longitude_deg) instead"
+        )
     if given:
         phase = Phase(
             kind=_PHASE_KEYS[given[0]], value=_value(raw[given[0]], reference=ref, where=f"{name}.{given[0]}")

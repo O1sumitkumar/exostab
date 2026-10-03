@@ -50,8 +50,9 @@ def test_alternative_units_and_fields(tmp_path: Path) -> None:
             """
 star: {mass_msun: {value: 1.0, err_plus: 0.1, err_minus: 0.05}}
 planets:
-  - {name: b, semimajor_axis_au: {value: 0.1, err: 0.001}, radius_earth: 1.5, mean_anomaly_deg: 10}
-  - {name: c, semimajor_axis_au: 0.2, mass_msun: 3.0e-6, periastron_time_jd: 2450000.0, eccentricity: 0.1}
+  - {name: b, semimajor_axis_au: {value: 0.1, err: 0.001}, radius_earth: 1.5, mean_anomaly_deg: 10, omega_deg: 5}
+  - {name: c, semimajor_axis_au: 0.2, mass_msun: 3.0e-6, periastron_time_jd: 2450000.0, eccentricity: 0.1,
+     omega_deg: 30}
 """,
         )
     )
@@ -88,6 +89,14 @@ planets:
             "at most one",
         ),
         (GOOD.replace("mass_earth: 5", "mass_earth: 5, eccentricity: 1.5"), SystemFileError, "eccentricity"),
+        # a mean anomaly or a time of periastron places the planet relative to its periastron, whose direction
+        # omega_deg gives; without it the planet's longitude would be random in every run
+        (GOOD.replace("mass_earth: 5", "mass_earth: 5, mean_anomaly_deg: 30"), SystemFileError, "omega_deg"),
+        (
+            GOOD.replace("mass_earth: 5", "mass_earth: 5, periastron_time_jd: 2460000.0"),
+            SystemFileError,
+            "omega_deg",
+        ),
         ("star: [", SystemFileError, "not valid YAML"),
         ("star: {mass_msun: 1}\nplanets: [1, 2]", SystemFileError, "must be a mapping"),
     ],

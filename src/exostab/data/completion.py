@@ -28,7 +28,8 @@ Orbital phase
     From the transit mid-time of transiting planets; from the time of inferior conjunction or periastron
     of non-transiting planets only if it comes from the same publication as the period (the composite
     table can mix publications, and phases from one orbital solution cannot be combined with periods
-    from another); otherwise drawn uniformly for every run ("randomized").
+    from another) and, for a time of periastron, only if the argument of periastron is published (it
+    gives the direction of the periastron); otherwise drawn uniformly for every run ("randomized").
 Inclinations and nodes
     All orbits are placed in one plane (coplanar). Sky-plane inclinations do not determine mutual
     inclinations, and the longitudes of the ascending node are not used.
@@ -408,7 +409,10 @@ def _phase(row: Row, name: str, duplicated_tper: bool, flags: list[CompletionFla
             )
         )
         return Phase(kind=PhaseKind.TRANSIT, value=_value(row, "pl_tranmid"))
-    if row.get("pl_orbtper") is not None and _same_reference(row, "pl_orbtper") and not duplicated_tper:
+    usable_tper = (
+        row.get("pl_orbtper") is not None and _same_reference(row, "pl_orbtper") and not duplicated_tper
+    )
+    if usable_tper and row.get("pl_orblper") is not None:
         flags.append(
             _flag(
                 name,
@@ -418,7 +422,14 @@ def _phase(row: Row, name: str, duplicated_tper: bool, flags: list[CompletionFla
             )
         )
         return Phase(kind=PhaseKind.PERIASTRON, value=_value(row, "pl_orbtper"))
-    if row.get("pl_orbtper") is not None and duplicated_tper:
+    if usable_tper:
+        # A time of periastron fixes the mean anomaly, but the periastron direction (omega) is drawn at random,
+        # so the planet's mean longitude, and every angle between planets, would be random in every run.
+        why = (
+            "a time of periastron is published but not the argument of periastron, so the direction of the "
+            "periastron, and with it the planet's position relative to the other planets, is unknown"
+        )
+    elif row.get("pl_orbtper") is not None and duplicated_tper:
         why = (
             "several planets share the same published time of periastron, which is likely an epoch "
             "rather than a periastron time"
