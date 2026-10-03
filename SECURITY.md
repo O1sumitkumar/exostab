@@ -5,8 +5,9 @@ you give it, and it writes results to a local folder. It stores no credentials.
 
 ## Reporting a vulnerability
 
-Please do not open a public issue. Use GitHub's private vulnerability reporting ("Security" tab, "Report a
-vulnerability") or email mehmet@mehmet-oz.com. You should get an answer within a week.
+Please do not open a public issue. Report it privately on GitHub
+(https://github.com/mimitoz62/exostab/security/advisories/new, also reached from the "Security" tab with
+"Report a vulnerability"), or email mehmet@mehmet-oz.com. You should get an answer within a week.
 
 ## Supported versions
 
