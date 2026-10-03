@@ -264,6 +264,17 @@ def test_period_from_semimajor_axis() -> None:
         system_from_rows(pair(pl_orbper=None, pl_orbsmax=None), INFO)
 
 
+@pytest.mark.parametrize("method", ["Microlensing", "Imaging"])
+def test_no_period_from_a_projected_separation(method: str) -> None:
+    # For microlensing and directly imaged planets the archive's pl_orbsmax can be the projected separation
+    # on the sky, which gives neither the orbit nor the spacing of the planets.
+    with pytest.raises(IncompleteSystemError, match="projected separation"):
+        system_from_rows(pair(pl_orbper=None, pl_orbsmax=2.77, discoverymethod=method), INFO)
+    # with a published period the planet is placed as usual
+    s = system_from_rows(pair(pl_orbsmax=2.77, discoverymethod=method), INFO)
+    assert s.planets[1].period_days.provenance is Provenance.MEASURED
+
+
 def test_star_rules() -> None:
     with pytest.raises(IncompleteSystemError, match="circumbinary"):
         system_from_rows(pair(cb_flag=1), INFO)

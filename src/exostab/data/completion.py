@@ -9,7 +9,9 @@ Stellar mass
     disagreement is flagged with every value and its reference.
 Period
     Published period used when present. Otherwise derived from the semi-major axis with Kepler's third
-    law ("derived"). A planet with neither cannot be placed and the system is rejected.
+    law ("derived"), except for planets found by microlensing or direct imaging, whose ``pl_orbsmax`` can
+    be a projected separation: those systems are rejected. A planet with neither cannot be placed and
+    the system is rejected.
 Mass
     ``pl_bmassprov`` says what the archive's mass is: "Mass" and "Msin(i)/sin(i)" are true masses;
     "Msini" is a minimum mass (used as the mass, i.e. sin i = 1, unless ``--inclination-prior`` is
@@ -182,6 +184,9 @@ def complete_star(rows: Sequence[Row]) -> tuple[Star, list[CompletionFlag]]:
     return Star(name=host, mass_msun=mass, n_stars=n_stars), flags
 
 
+_PROJECTED_SEPARATION_METHODS = ("Microlensing", "Imaging")
+
+
 def _period(row: Row, name: str, m_star: float, flags: list[CompletionFlag]) -> Value:
     if row.get("pl_orbper") is not None:
         v = _value(row, "pl_orbper")
@@ -197,6 +202,16 @@ def _period(row: Row, name: str, m_star: float, flags: list[CompletionFlag]) -> 
     if a is None:
         raise IncompleteSystemError(
             f"{name}: neither the orbital period nor the semi-major axis is published."
+        )
+    if row.get("discoverymethod") in _PROJECTED_SEPARATION_METHODS:
+        # The archive defines pl_orbsmax for these planets as "the projected separation in the plane of the
+        # sky" (pscomppars column documentation); some imaging values come from orbit fits, but the table
+        # does not say which. A projected separation gives neither the orbit nor the order of the planets.
+        raise IncompleteSystemError(
+            f"{name}: no orbital period is published, and for a planet found by "
+            f"{str(row['discoverymethod']).lower()} the archive's pl_orbsmax = {a:g} AU can be the projected "
+            "separation on the sky rather than the semi-major axis, so the orbit cannot be placed. Supply the "
+            "orbit with --from-file if a published orbit fit exists."
         )
     m_p = (row.get("pl_bmasse") or 0.0) * MEARTH_IN_MSUN
     P = years_to_days(period_from_semimajor_axis(a, m_star + m_p))
