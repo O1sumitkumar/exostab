@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 
 from ..models import (
     CompletionFlag,
@@ -99,6 +100,13 @@ def _value(raw: Any, *, scale: float = 1.0, reference: str | None = None, where:
         )
     except (TypeError, ValueError) as exc:
         raise SystemFileError(f"{where}: {exc}") from exc
+
+
+def _invalid(exc: ValueError) -> str:
+    """The messages of a model validation error, without pydantic's boilerplate."""
+    if isinstance(exc, ValidationError):
+        return "; ".join(str(e["msg"]).removeprefix("Value error, ") for e in exc.errors())
+    return str(exc)
 
 
 def _flag(planet: str | None, parameter: str, rule: str, message: str) -> CompletionFlag:
@@ -178,6 +186,8 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
         period = _value(raw["period_days"], reference=ref, where=f"{name}.period_days")
     elif "semimajor_axis_au" in raw:
         a = _value(raw["semimajor_axis_au"], reference=ref, where=f"{name}.semimajor_axis_au")
+        if not a.require() > 0:
+            raise SystemFileError(f"{name}: semimajor_axis_au must be positive, got {a.value:g}")
         P = years_to_days(period_from_semimajor_axis(a.require(), m_star + mass.require() * MEARTH_IN_MSUN))
         rel = 0.5 * ((a.err_plus or 0) + (a.err_minus or 0)) / a.require()
         err = 1.5 * rel * P if a.has_errors else None
@@ -257,7 +267,7 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
             radius_earth=radius,
         )
     except ValueError as exc:
-        raise SystemFileError(str(exc)) from exc
+        raise SystemFileError(_invalid(exc)) from exc
 
 
 def load_system_file(path: str | Path) -> System:
@@ -279,7 +289,10 @@ def load_system_file(path: str | Path) -> System:
         raise SystemFileError(f"{p}: 'star' must be a mapping with 'mass_msun'")
     star_mass = _value(star_raw["mass_msun"], where="star.mass_msun")
     name = str(raw.get("name") or p.stem)
-    star = Star(name=str(star_raw.get("name") or name), mass_msun=star_mass)
+    try:
+        star = Star(name=str(star_raw.get("name") or name), mass_msun=star_mass)
+    except ValueError as exc:
+        raise SystemFileError(f"{p}: star: {_invalid(exc)}") from exc
     planets_raw = raw.get("planets")
     if not isinstance(planets_raw, list) or len(planets_raw) < 2:
         raise SystemFileError(f"{p}: 'planets' must be a list of at least two planets")
@@ -304,11 +317,20 @@ def load_system_file(path: str | Path) -> System:
             f"{p}: epoch_jd is required when mean anomalies or mean longitudes are combined with transit or "
             "periastron times: give the epoch at which the angles hold"
         )
-    return System(
-        name=name,
-        star=star,
-        planets=tuple(planets),
-        epoch_jd=float(epoch) if epoch is not None else None,
-        source=DataSource(kind="file", path=str(p), note=str(raw["notes"]) if raw.get("notes") else None),
-        flags=tuple(flags),
-    )
+    try:
+        if isinstance(epoch, bool):  # YAML reads "yes"/"no" as booleans, which float() would accept
+            raise TypeError
+        epoch_jd = None if epoch is None else float(epoch)
+    except (TypeError, ValueError) as exc:
+        raise SystemFileError(f"{p}: epoch_jd must be a Julian date (a number), got {epoch!r}") from exc
+    try:
+        return System(
+            name=name,
+            star=star,
+            planets=tuple(planets),
+            epoch_jd=epoch_jd,
+            source=DataSource(kind="file", path=str(p), note=str(raw["notes"]) if raw.get("notes") else None),
+            flags=tuple(flags),
+        )
+    except ValueError as exc:
+        raise SystemFileError(f"{p}: {_invalid(exc)}") from exc

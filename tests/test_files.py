@@ -98,6 +98,24 @@ planets:
             SystemFileError,
             "omega_deg",
         ),
+        # invalid values give a SystemFileError naming the field, not a traceback
+        (
+            GOOD.replace("mass_msun: 1.0", "mass_msun: -1.0"),
+            SystemFileError,
+            "star: .*stellar mass must be positive",
+        ),
+        (
+            GOOD.replace("period_days: 10", "semimajor_axis_au: 0"),
+            SystemFileError,
+            "semimajor_axis_au must be",
+        ),
+        (
+            GOOD.replace("period_days: 10", "semimajor_axis_au: -0.3"),
+            SystemFileError,
+            "semimajor_axis_au must be",
+        ),
+        ("epoch_jd: 2460000 BJD\n" + GOOD, SystemFileError, "epoch_jd"),
+        (GOOD.replace("name: T c", "name: T b"), SystemFileError, "unique"),
         ("star: [", SystemFileError, "not valid YAML"),
         ("star: {mass_msun: 1}\nplanets: [1, 2]", SystemFileError, "must be a mapping"),
     ],
