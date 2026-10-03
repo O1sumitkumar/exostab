@@ -63,6 +63,7 @@ def test_draw_stats() -> None:
         ({"megno": nb.MEGNO_CHAOTIC}, "chaotic"),
         ({"status": "encounter"}, "unstable"),
         ({"status": "escape", "energy_error": 1.0}, "unstable"),
+        ({"status": "star_approach", "star_approach": "b"}, "inconclusive"),
         ({"energy_error": 1e-3}, "inconclusive"),
         ({"status": "error"}, "inconclusive"),
         ({"megno": math.nan}, "inconclusive"),
@@ -90,6 +91,13 @@ def test_evaluate_counts_and_notes() -> None:
     assert ind.verdict is M and any("fewer than" in n for n in ind.notes)
     ind = nb.evaluate([result(energy_error=1e-3)], None)
     assert ind.verdict is INC and any("energy error" in n for n in ind.notes)
+    star = result(label="draw 3", status="star_approach", star_approach="X b")
+    ind = nb.evaluate([result(), *[result(label=f"draw {k}") for k in range(19)], star], None)
+    assert ind.verdict is S and ind.details["classification_counts"]["inconclusive"] == 1  # 1 of 20 draws
+    assert "0 close encounter/escape, 1 inconclusive of 20" in ind.summary
+    assert any("draw 3: X b came closer to the star" in n and "1 of 21 runs" in n for n in ind.notes)
+    assert not any("energy error" in n for n in ind.notes)
+    assert ind.details["draws"][-1]["star_approach"] == "X b"
     ind = nb.evaluate([result(status="encounter", t_end=5.0)], None, random_phases=["X b"])
     assert ind.verdict is U and "close encounter after 5 yr" in ind.summary
     assert any("X b" in n and "random" in n for n in ind.notes)

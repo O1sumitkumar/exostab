@@ -24,6 +24,14 @@ Set-up (justified choices; see also DECISIONS.md):
   (DECISIONS.md, D20). The run stops with an *escape* when a
   body moves farther than ``escape_factor`` (default 100) times the largest semi-major axis from the
   centre of mass.
+* REBOUND's collision search also pairs each planet with the star (radius 0), so it reports a planet that
+  comes closer to the star than half its own Hill radius: a pericentre a (1 - e) < 0.5 a (m / 3 M_*)^(1/3),
+  i.e. e above about 0.965 for one Jupiter mass and 0.925 for ten around a Sun-like star, from the start or
+  after the eccentricity has grown. That is not a close encounter between planets, so it does not stop the
+  run; a run that reaches its end is labelled ``star_approach`` instead of ``completed``. exostab models
+  neither tides, nor general relativity, nor the size of the star, which can all matter that close, so such
+  a run gets no verdict (:mod:`exostab.indicators.megno`). The distance is not a physical limit (stellar and
+  planetary radii are not part of the model); it is where the collision search fires (DECISIONS.md, D20).
 * The relative energy error |E(t) - E(0)| / |E(0)| is measured at ``ENERGY_CHECKS`` equally spaced times in
   every run (the nominal run, every Monte Carlo draw, the IAS15 check, catalog and sweep runs alike) and when a
   run stops early; the maximum is reported. The time series kept for the plots (``n_samples``) is a subset of
@@ -37,6 +45,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -46,7 +55,9 @@ from .sampling import Realization
 from .units import SIM_UNITS
 
 Integrator = Literal["whfast", "ias15"]
-Status = Literal["completed", "encounter", "escape", "error"]
+# completed: reached the requested length; star_approach: reached it, but a planet passed closer to the star
+# than half its Hill radius; encounter / escape: stopped early; error: the integration failed.
+Status = Literal["completed", "star_approach", "encounter", "escape", "error"]
 
 # Number of equally spaced times at which every run checks its relative energy error (DECISIONS.md, D8).
 ENERGY_CHECKS = 1200
@@ -84,6 +95,7 @@ class RunResult:
     n_orbits_outermost: float
     series: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    star_approach: str | None = None  # first planet that came closer to the star than half its Hill radius
 
 
 def pericentre_timescale(P: float, e: float) -> float:
@@ -110,8 +122,30 @@ def hill_radii(real: Realization) -> list[float]:
     return [float(a[k]) * (b.m / (3 * real.m_star)) ** (1 / 3) for k, b in enumerate(real.bodies)]
 
 
-def build_simulation(real: Realization, config: RunConfig) -> rebound.Simulation:
-    """A REBOUND simulation of ``real`` in (yr, AU, Msun), centred on the centre of mass."""
+def _resolve_collision(star_approaches: list[int]) -> Callable[[Any, Any], int]:
+    """REBOUND collision callback: two planets halt the run; a planet and the star are only recorded.
+
+    The index of a planet passing the star is appended to ``star_approaches`` (first time only).
+    """
+
+    def resolve(sim_p: Any, c: Any) -> int:
+        if c.p1 == 0 or c.p2 == 0:
+            if not star_approaches:
+                star_approaches.append(int(max(c.p1, c.p2)))
+            return 0  # keep both particles and go on
+        return int(rebound.clibrebound.reb_collision_resolve_halt(sim_p, c))
+
+    return resolve
+
+
+def build_simulation(
+    real: Realization, config: RunConfig, star_approaches: list[int] | None = None
+) -> rebound.Simulation:
+    """A REBOUND simulation of ``real`` in (yr, AU, Msun), centred on the centre of mass.
+
+    Close encounters between planets halt the integration (``rebound.Collision``); a planet passing within
+    half its Hill radius of the star does not, and its particle index is appended to ``star_approaches``.
+    """
     sim = rebound.Simulation()
     sim.units = SIM_UNITS
     sim.add(m=real.m_star)
@@ -125,7 +159,7 @@ def build_simulation(real: Realization, config: RunConfig) -> rebound.Simulation
     for k, rh in enumerate(hill_radii(real)):
         sim.particles[k + 1].r = ENCOUNTER_HILL_FRACTION * rh
     sim.collision = "line"
-    sim.collision_resolve = "halt"
+    sim.collision_resolve = _resolve_collision([] if star_approaches is None else star_approaches)
     sim.exit_max_distance = config.escape_factor * max(p.a for p in sim.particles[1:])
     return sim
 
@@ -133,7 +167,8 @@ def build_simulation(real: Realization, config: RunConfig) -> rebound.Simulation
 def run(real: Realization, config: RunConfig) -> RunResult:
     """Integrate one realization and return what happened. Never raises for physical outcomes."""
     t_wall = time.perf_counter()
-    sim = build_simulation(real, config)
+    star_approaches: list[int] = []
+    sim = build_simulation(real, config, star_approaches)
     if config.megno:
         sim.init_megno(seed=config.megno_seed)
     periods = [b.P for b in real.bodies]
@@ -194,6 +229,9 @@ def run(real: Realization, config: RunConfig) -> RunResult:
     megno = lyap = None
     if config.megno:
         megno, lyap = float(sim.megno()), float(sim.lyapunov())
+    star_planet = real.bodies[star_approaches[0] - 1].name if star_approaches else None
+    if status == "completed" and star_planet is not None:
+        status = "star_approach"
     if not math.isfinite(max_err):
         status, error = "error", error or "non-finite energy"
     return RunResult(
@@ -212,4 +250,5 @@ def run(real: Realization, config: RunConfig) -> RunResult:
         n_orbits_outermost=float(sim.t) / max(periods),
         series=series if config.n_samples else {},
         error=error,
+        star_approach=star_planet,
     )

@@ -99,8 +99,22 @@ def test_energy_error_is_checked_over_the_whole_run_whatever_is_kept_for_plots()
 
 def test_close_encounter_is_detected() -> None:
     res = run(pair(ratio=1.1, m=1e-4), RunConfig(n_orbits=5000))
-    assert res.status == "encounter"
+    assert res.status == "encounter" and res.star_approach is None
     assert res.t_end < res.t_target
+
+
+@pytest.mark.parametrize("integrator", ["whfast", "ias15"])
+def test_star_approach_is_not_a_close_encounter(integrator: str) -> None:
+    # b: 0.01 Msun at P = 1 yr, e = 0.94: pericentre 0.060 AU, inside half its Hill radius (0.075 AU), so
+    # REBOUND's collision search pairs it with the star at every pericentre. c is 9.7 AU away. No two planets
+    # meet, so the run goes to the end, labelled as a star approach rather than as a close encounter.
+    real = Realization(
+        "grazer", 1.0, (Body("b", 0.01, 1.0, 0.94, 0.0, math.pi), Body("c", 1e-3, 30.0, 0.0, 0.0, 0.0))
+    )
+    assert real.semi_major_axes()[0] * 0.06 < 0.5 * hill_radii(real)[0]
+    res = run(real, RunConfig(n_orbits=30, integrator=integrator))  # type: ignore[arg-type]
+    assert res.status == "star_approach" and res.star_approach == "b"
+    assert res.t_end >= res.t_target and res.megno is not None
 
 
 def test_escape_is_detected() -> None:
