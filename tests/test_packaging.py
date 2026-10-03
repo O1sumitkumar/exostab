@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,7 @@ from packaging.version import Version
 from exostab import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
+WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 def test_citation_names_the_package_version() -> None:
@@ -55,3 +57,20 @@ def test_coverage_data_files_are_ignored() -> None:
         ["git", "check-ignore", "--no-index", *names], cwd=ROOT, capture_output=True, text=True, check=False
     )
     assert r.stdout.split() == names
+
+
+@pytest.mark.skipif(not WORKFLOWS.is_dir(), reason="workflows are not in the sdist")
+def test_workflow_pipelines_keep_the_exit_status() -> None:
+    # A step without `shell:` runs as `bash -e {0}`, without pipefail, so `cmd | tail` succeeds even when cmd
+    # fails. `shell: bash` runs `bash --noprofile --norc -eo pipefail {0}`.
+    pipe = re.compile(r"(?<!\|)\|(?!\|)")
+    unsafe = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        default = workflow.get("defaults", {}).get("run", {}).get("shell")
+        for job_id, job in workflow["jobs"].items():
+            shell = job.get("defaults", {}).get("run", {}).get("shell", default)
+            for step in job.get("steps", []):
+                if pipe.search(step.get("run", "")) and step.get("shell", shell) != "bash":
+                    unsafe.append(f"{path.name}: {job_id}: {step.get('name') or step['run'][:60]}")
+    assert unsafe == []

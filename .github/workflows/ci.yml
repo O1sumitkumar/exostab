@@ -115,5 +115,6 @@ jobs:
           python -m pytest
       - name: Wheel contains the snapshot and the schema
         run: |
-          python -m zipfile -l dist/*.whl | grep -q pscomppars_snapshot.csv
-          python -m zipfile -l dist/*.whl | grep -q report.schema.json
+          python -m zipfile -l dist/*.whl > wheel-contents.txt
+          grep -q pscomppars_snapshot.csv wheel-contents.txt
+          grep -q report.schema.json wheel-contents.txt
