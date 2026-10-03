@@ -182,6 +182,45 @@ def test_upper_limits_only_on_planet_masses_and_eccentricities(
         load_system_file(write(tmp_path, GOOD.replace(*change)))
 
 
+def test_semimajor_axis_is_kept_and_checked_against_the_period(tmp_path: Path) -> None:
+    # The axis used to be dropped without a check when a period was also given.
+    one_au = GOOD.replace("period_days: 10", "period_days: 365.25, semimajor_axis_au: 1.0")
+    s = load_system_file(write(tmp_path, one_au))
+    b = s.planet("b")
+    assert b.semimajor_axis_au is not None and b.semimajor_axis_au.value == 1.0
+    assert b.period_days.provenance is Provenance.MEASURED
+    # P = 10 d around 1 Msun is a = 0.09 AU, not 5 AU
+    with pytest.raises(SystemFileError, match="semimajor_axis_au = 5 AU disagrees"):
+        load_system_file(
+            write(tmp_path, GOOD.replace("period_days: 10", "period_days: 10, semimajor_axis_au: 5.0"))
+        )
+    # an axis alone is kept too
+    s = load_system_file(write(tmp_path, GOOD.replace("period_days: 10", "semimajor_axis_au: 0.1")))
+    assert s.planet("b").semimajor_axis_au is not None
+
+
+@pytest.mark.parametrize("key", ["circumbinary: true", "n_stars: 2", "mass_msun_err: 0.1"])
+def test_unknown_star_keys_are_refused(tmp_path: Path, key: str) -> None:
+    # They were silently ignored: a binary modelled as a single star without a flag, or an error bar lost.
+    with pytest.raises(SystemFileError, match="star: unknown keys"):
+        load_system_file(write(tmp_path, GOOD.replace("mass_msun: 1.0", f"mass_msun: 1.0, {key}")))
+
+
+def test_mass_kind_must_match_the_mass_given(tmp_path: Path) -> None:
+    # a radius-only planet gets a mass-radius estimate, which is not a measured or minimum mass
+    for kind in ("minimum", "true"):
+        text = GOOD.replace("mass_earth: 5", f"radius_earth: 2.0, mass_kind: {kind}")
+        with pytest.raises(SystemFileError, match="mass_kind"):
+            load_system_file(write(tmp_path, text))
+    # a mass the file declares estimated is labelled and flagged like an archive estimate
+    s = load_system_file(
+        write(tmp_path, GOOD.replace("mass_earth: 5", "mass_earth: 5, mass_kind: estimated"))
+    )
+    b = s.planet("b")
+    assert b.mass_kind is MassKind.ESTIMATED and b.mass_earth.provenance is Provenance.ESTIMATED
+    assert "mass_estimated_in_file" in {f.rule for f in s.flags if f.planet == "T b"}
+
+
 def test_upper_limit_must_be_a_boolean(tmp_path: Path) -> None:
     # the quoted string "no" is truthy and used to count as an upper limit
     text = GOOD.replace("mass_earth: 8", 'mass_earth: 8, eccentricity: {value: 0.1, upper_limit: "no"}')

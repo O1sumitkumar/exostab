@@ -43,7 +43,14 @@ from ..models import (
     System,
     Value,
 )
-from ..units import MEARTH_IN_MSUN, MJUP_IN_MEARTH, period_from_semimajor_axis, years_to_days
+from ..units import (
+    MEARTH_IN_MSUN,
+    MJUP_IN_MEARTH,
+    days_to_years,
+    period_from_semimajor_axis,
+    semimajor_axis_from_period,
+    years_to_days,
+)
 from .completion import IncompleteSystemError, coplanar_flag
 from .massradius import MassRadiusError, mass_from_radius
 
@@ -123,6 +130,25 @@ def _flag(planet: str | None, parameter: str, rule: str, message: str) -> Comple
     return CompletionFlag(planet=planet, parameter=parameter, rule=rule, message=message)
 
 
+AXIS_TOLERANCE = 0.10  # relative; Kepler's a scales as M*^(1/3), so a 30% different stellar mass gives 9%
+
+
+def _check_axis(name: str, a: Value, period_days: float, m_total_msun: float) -> None:
+    """Refuse a semi-major axis that contradicts the period (the period is what the integrations use).
+
+    Allowed: 10% (stellar masses from different sources) or three times the axis's relative error, whichever
+    is larger.
+    """
+    a_kepler = semimajor_axis_from_period(days_to_years(period_days), m_total_msun)
+    rel_err = 0.5 * ((a.err_plus or 0.0) + (a.err_minus or 0.0)) / a.require()
+    if abs(a.require() / a_kepler - 1) > max(AXIS_TOLERANCE, 3 * rel_err):
+        raise SystemFileError(
+            f"{name}: semimajor_axis_au = {a.value:g} AU disagrees with period_days = {period_days:g} d, which "
+            f"gives {a_kepler:.4g} AU for the stellar and planet mass; give only one of them or check the "
+            "stellar mass"
+        )
+
+
 def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx: int) -> Planet:
     name = str(raw.get("name") or f"planet {idx + 1}")
     unknown = set(raw) - _PLANET_KEYS
@@ -161,7 +187,23 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
                     "--inclination-prior is set.",
                 )
             )
+        elif kind is MassKind.ESTIMATED:
+            mass = mass.model_copy(update={"provenance": Provenance.ESTIMATED})
+            flags.append(
+                _flag(
+                    name,
+                    "mass",
+                    "mass_estimated_in_file",
+                    "The file marks this mass as estimated (for example from a mass-radius relation), not "
+                    "measured.",
+                )
+            )
     elif radius is not None:
+        if "mass_kind" in raw and kind is not MassKind.ESTIMATED:
+            raise SystemFileError(
+                f"{name}: mass_kind {kind.value!r} needs a mass; with radius_earth only, the mass is estimated "
+                "from the radius (leave out mass_kind or set it to estimated)"
+            )
         try:
             m = mass_from_radius(radius.require())
         except MassRadiusError as exc:
@@ -194,13 +236,18 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
         )
 
     # period
-    if "period_days" in raw:
-        period = _value(raw["period_days"], reference=ref, where=f"{name}.period_days")
-    elif "semimajor_axis_au" in raw:
+    a = None
+    m_total = m_star + mass.require() * MEARTH_IN_MSUN  # Msun
+    if "semimajor_axis_au" in raw:
         a = _value(raw["semimajor_axis_au"], reference=ref, where=f"{name}.semimajor_axis_au")
         if not a.require() > 0:
             raise SystemFileError(f"{name}: semimajor_axis_au must be positive, got {a.value:g}")
-        P = years_to_days(period_from_semimajor_axis(a.require(), m_star + mass.require() * MEARTH_IN_MSUN))
+    if "period_days" in raw:
+        period = _value(raw["period_days"], reference=ref, where=f"{name}.period_days")
+        if a is not None and period.require() > 0:
+            _check_axis(name, a, period.require(), m_total)
+    elif a is not None:
+        P = years_to_days(period_from_semimajor_axis(a.require(), m_total))
         rel = 0.5 * ((a.err_plus or 0) + (a.err_minus or 0)) / a.require()
         err = 1.5 * rel * P if a.has_errors else None
         period = Value(value=P, err_plus=err, err_minus=err, provenance=Provenance.DERIVED, reference=ref)
@@ -277,6 +324,7 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
             omega_deg=omega,
             phase=phase,
             radius_earth=radius,
+            semimajor_axis_au=a,
         )
     except ValueError as exc:
         raise SystemFileError(_invalid(exc)) from exc
@@ -299,6 +347,9 @@ def load_system_file(path: str | Path) -> System:
     star_raw = raw.get("star")
     if not isinstance(star_raw, dict) or "mass_msun" not in star_raw:
         raise SystemFileError(f"{p}: 'star' must be a mapping with 'mass_msun'")
+    unknown = set(star_raw) - {"name", "mass_msun"}
+    if unknown:  # e.g. a misspelt error key, which would leave the stellar mass fixed in every draw
+        raise SystemFileError(f"{p}: star: unknown keys {sorted(unknown)}")
     star_mass = _value(star_raw["mass_msun"], where="star.mass_msun")
     name = str(raw.get("name") or p.stem)
     try:
