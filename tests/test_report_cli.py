@@ -111,6 +111,46 @@ def test_figures(small_result, tmp_path: Path) -> None:  # type: ignore[no-untyp
     assert all(p.stat().st_size > 10_000 for p in paths)
 
 
+def test_sweep_figure_shows_infinite_and_zero_beta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from exostab.plots import sweep_figure
+
+    # β = ∞ (resonance overlap on circular orbits, the most AMD-unstable case) and β = 0 (circular, coplanar
+    # orbits) cannot be drawn on a log axis; they must still appear, at the edges, not leave a gap
+    betas = (math.inf, math.inf, 2.0, 0.5, 0.0)
+    rows = [
+        {
+            "value": 10.0 * (k + 1),
+            "nbody_class": "regular",
+            "megno": 2.0,
+            "hill_margin_min": 0.1,
+            "amd_beta_max": b,
+        }
+        for k, b in enumerate(betas)
+    ]
+    figures: list[object] = []
+    monkeypatch.setattr(plt, "close", figures.append)
+    sweep_figure(rows, "x", "title", tmp_path / "sweep.png")
+    monkeypatch.undo()
+    ax = figures[0].axes[2]  # type: ignore[attr-defined]
+    lo, hi = ax.get_ylim()
+    drawn: dict[float, float] = {}
+    for line in ax.lines[:-1]:  # the last line is the β = 1 reference
+        drawn.update(
+            (float(x), float(y)) for x, y in zip(line.get_xdata(), line.get_ydata()) if np.isfinite(y)
+        )
+    for coll in ax.collections:
+        drawn.update((float(x), float(y)) for x, y in coll.get_offsets())
+    plt.close(figures[0])  # type: ignore[arg-type]
+    assert sorted(drawn) == [10.0, 20.0, 30.0, 40.0, 50.0]
+    assert all(lo <= y <= hi for y in drawn.values())
+    assert drawn[10.0] == drawn[20.0] == pytest.approx(hi) and drawn[50.0] == pytest.approx(lo)
+    assert drawn[30.0] == 2.0 and drawn[40.0] == 0.5
+    assert any("β = ∞" in t.get_text() for t in ax.get_legend().get_texts())
+
+
 # ------------------------------------------------------------------------------------------ CLI
 
 
