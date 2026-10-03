@@ -188,6 +188,30 @@ def test_missing_eccentricity_and_omega() -> None:
     assert {"eccentricity_assumed_zero", "omega_randomized"} <= {f.rule for f in s.flags}
 
 
+def test_published_zero_eccentricity_without_errors_is_an_assumption() -> None:
+    # e = 0 with no uncertainty is a circular orbit fixed in the source's fit (e.g. the DR25 KOI table),
+    # not a measurement: it must be labelled and flagged like exostab's own e = 0 assumption.
+    fixed = {
+        "pl_orbeccen": 0.0,
+        "pl_orbeccenerr1": None,
+        "pl_orbeccenerr2": None,
+        "pl_orbeccen_reflink": REF_B,
+    }
+    s = system_from_rows(pair(**fixed), INFO)
+    c = s.planets[1]
+    assert c.eccentricity.value == 0.0 and c.eccentricity.provenance is Provenance.ASSUMED
+    assert c.eccentricity.reference == "Beta et al. 2021"
+    flag = next(f for f in s.flags if f.rule == "eccentricity_fixed_zero_by_source")
+    assert flag.planet == "Host c" and "Beta et al. 2021" in flag.message
+    # zero error bars are no uncertainty either
+    s = system_from_rows(pair(**{**fixed, "pl_orbeccenerr1": 0.0, "pl_orbeccenerr2": 0.0}), INFO)
+    assert s.planets[1].eccentricity.provenance is Provenance.ASSUMED
+    # a zero eccentricity with an error bar is a measurement
+    s = system_from_rows(pair(pl_orbeccen=0.0, pl_orbeccenerr1=0.05, pl_orbeccenerr2=0.0), INFO)
+    assert s.planets[1].eccentricity.provenance is Provenance.MEASURED
+    assert "eccentricity_fixed_zero_by_source" not in {f.rule for f in s.flags}
+
+
 def test_limits() -> None:
     s = system_from_rows(pair(pl_orbeccenlim=1, pl_bmasselim=1), INFO)
     c = s.planets[1]

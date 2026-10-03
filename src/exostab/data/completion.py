@@ -13,7 +13,9 @@ Mass
     is used as the value in the nominal run. A missing mass is estimated from the radius with the
     Chen & Kipping (2017) relation where that relation can be inverted.
 Eccentricity
-    Missing -> 0 ("assumed"). An upper limit is used as the value in the nominal run.
+    Missing -> 0 ("assumed"). Published as exactly 0 without an uncertainty -> also "assumed" and
+    flagged: such a value is a circular orbit fixed in the source's fit, not a measurement. An upper
+    limit is used as the value in the nominal run.
 Argument of periastron
     Missing -> drawn uniformly for every run ("randomized").
 Orbital phase
@@ -241,6 +243,22 @@ def _eccentricity(row: Row, name: str, flags: list[CompletionFlag]) -> Value:
     v = _value(row, "pl_orbeccen")
     if not 0 <= v.require() < 1:
         raise IncompleteSystemError(f"{name}: published eccentricity {v.value} is outside [0, 1).")
+    no_errors = not (row.get("pl_orbeccenerr1") or row.get("pl_orbeccenerr2"))  # missing or zero
+    if v.value == 0 and no_errors and row.get("pl_orbeccenlim") not in (1, -1):
+        # A measured eccentricity has an uncertainty; exactly 0 without one is a circular orbit that the
+        # source fixed in its fit (all eccentricities of the DR25 KOI table, for example). Same as a
+        # missing eccentricity: e = 0 in every run, labelled "assumed".
+        source = v.reference or "the source"
+        flags.append(
+            _flag(
+                name,
+                "pl_orbeccen",
+                "eccentricity_fixed_zero_by_source",
+                f"Eccentricity published as exactly 0 without an uncertainty ({source}): a circular orbit "
+                "fixed in the fit, not a measurement. Treated as assumed: e = 0 in every run.",
+            )
+        )
+        return v.model_copy(update={"provenance": Provenance.ASSUMED})
     if row.get("pl_orbeccenlim") == 1:
         flags.append(
             _flag(
