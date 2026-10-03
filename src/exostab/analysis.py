@@ -165,8 +165,8 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
       and in at least 95% of the draws), and that evidence rests neither on upper limits nor on the nominal
       run alone;
     * inconclusive: the N-body integration could not be trusted;
-    * stable: every indicator says stable (including SPOCK when it is enabled), and Monte Carlo draws were
-      run;
+    * stable: every indicator says stable (including SPOCK when it is enabled), no N-body draw had a close
+      encounter or escape, and Monte Carlo draws were run;
     * marginal: everything else, i.e. whenever the indicators disagree or any of them is marginal.
 
     ``upper_limits`` lists the inputs that are only published upper limits (:func:`upper_limit_inputs`). The
@@ -227,6 +227,15 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
                 verdict=Verdict.MARGINAL,
                 summary="Every indicator is stable for the nominal parameters. " + NO_DRAWS,
                 reasons=caveats,
+            )
+        if encounters:
+            # A close encounter within the uncertainties is direct evidence of instability (DECISIONS.md, D15).
+            return Overall(
+                verdict=Verdict.MARGINAL,
+                summary=f"Every indicator is stable for the nominal parameters and for at least {AGREEMENT:.0%} "
+                f"of the draws, but {encounters} of {n} N-body draws had a close encounter or escape: part of "
+                f"the parameter range allowed by the {allowed} is unstable.",
+                reasons=hidden + extra,
             )
         if hidden:
             summary = (

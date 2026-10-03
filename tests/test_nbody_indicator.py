@@ -239,12 +239,13 @@ def test_stable_summary_never_hides_failing_draws() -> None:
     assert o.verdict is S and o.reasons == ["N-body + MEGNO: of 20 draws, 1 chaotic"]
 
 
-def test_a_close_encounter_draw_is_always_reported() -> None:
-    """19 regular draws and 1 close encounter keep the N-body verdict 'stable' under the 95% rule."""
+def test_a_close_encounter_in_any_draw_blocks_overall_stable() -> None:
+    """19 regular draws and 1 close encounter keep the N-body verdict 'stable' (95% rule), not the overall one."""
     nbi = nbody_ind(19, 1)
     assert nbi.verdict is S
     o = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbi})
-    assert "no sign of instability" not in o.summary
+    assert o.verdict is M and "no sign of instability" not in o.summary
+    assert "1 of 20 N-body draws had a close encounter or escape" in o.summary
     assert o.reasons == ["N-body + MEGNO: of 20 draws, 1 with a close encounter or escape"]
     # Kepler-19: the same N-body runs with marginal analytic criteria.
     o = overall_verdict({"hill": ind("hill", M), "amd": ind("amd", M), "nbody": nbi})
