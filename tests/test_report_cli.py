@@ -167,6 +167,22 @@ def test_check_errors(args: list[str], message: str) -> None:
     assert message in r.output
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["check", "--from-file", str(EXAMPLES / "two_planet.yaml"), *FAST, "--no-plots"],
+        ["sweep", "--from-file", str(EXAMPLES / "two_planet.yaml"), "--steps", "2", "--orbits", "100"],
+        ["catalog", "build", "--limit", "1", "--orbits", "100", "--draws", "0"],
+    ],
+)
+def test_negative_seed_is_rejected(command: list[str], tmp_path: Path) -> None:
+    # numpy's SeedSequence rejects negative seeds: refuse them up front instead of crashing (check, sweep) or
+    # recording every catalog system as an error
+    r = runner.invoke(app, [*command, "--seed", "-1", "--out", str(tmp_path)])
+    assert r.exit_code == 2, r.output
+    assert "--seed" in r.output and not list(tmp_path.iterdir())
+
+
 def test_list_command() -> None:
     r = runner.invoke(app, ["list", "--min-planets", "4", "--max-period-days", "200"])
     assert r.exit_code == 0, r.output

@@ -97,7 +97,9 @@ OrbitsOpt = Annotated[
     float, typer.Option("--orbits", help="N-body run length, in orbits of the innermost planet.", min=10)
 ]
 SeedOpt = Annotated[
-    int, typer.Option("--seed", help="Random seed: the same seed gives the same draws and results.")
+    int,
+    # numpy's SeedSequence takes only non-negative integers
+    typer.Option("--seed", help="Random seed: the same seed gives the same draws and results.", min=0),
 ]
 JobsOpt = Annotated[
     int | None, typer.Option("--jobs", "-j", help="Worker processes (default: all cores but one).", min=1)
