@@ -51,11 +51,30 @@ def test_report_json_roundtrip_and_provenance(small_result, tmp_path: Path) -> N
     assert back.overall.verdict == small_result.report.overall.verdict
 
 
-def test_non_finite_numbers_become_null(small_result) -> None:  # type: ignore[no-untyped-def]
+def test_non_finite_numbers_in_json(small_result) -> None:  # type: ignore[no-untyped-def]
+    # an infinite AMD β (resonances overlap even on circular orbits) is the most unstable case: it must not
+    # be written as null, which reads as "no value"
     rep = small_result.report.model_copy(deep=True)
-    rep.indicators["amd"].details["pairs"][0]["beta"] = math.inf
-    data = json.loads(rep.to_json())
-    assert data["indicators"]["amd"]["details"]["pairs"][0]["beta"] is None
+    details = rep.indicators["amd"].details
+    details["pairs"][0]["beta"] = math.inf
+    details["test_values"] = [-math.inf, math.nan, 1.5]
+    text = rep.to_json()  # valid JSON: allow_nan=False would raise otherwise
+    data = json.loads(text)
+    assert data["indicators"]["amd"]["details"]["pairs"][0]["beta"] == "inf"
+    assert data["indicators"]["amd"]["details"]["test_values"] == ["-inf", None, 1.5]
+    assert float(data["indicators"]["amd"]["details"]["pairs"][0]["beta"]) == math.inf
+    Report.model_validate(data)
+
+
+def test_infinite_amd_beta_in_report_json() -> None:
+    from exostab.data import load_system
+
+    # GJ 876 c / b: the resonances overlap even on circular orbits, so β is infinite
+    res = check_system(load_system("GJ 876"), CheckSettings(orbits=50, draws=0, jobs=1, ias15_check=False))
+    pairs = json.loads(res.report.to_json())["indicators"]["amd"]["details"]["pairs"]
+    betas = [p["beta"] for p in pairs]
+    assert "inf" in betas and None not in betas
+    assert all(p["circular_overlap"] for p in pairs if p["beta"] == "inf")
 
 
 def test_shipped_schema_is_up_to_date() -> None:
