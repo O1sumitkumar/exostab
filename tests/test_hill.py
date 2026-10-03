@@ -7,7 +7,7 @@ from hypothesis import strategies as st
 from conftest import hill_limit_ratio, two_planet_system
 from exostab.indicators import Verdict, amd, hill
 from exostab.sampling import Body, Realization, realizations
-from exostab.units import MEARTH_IN_MSUN
+from exostab.units import MEARTH_IN_MSUN, MJUP_IN_MSUN
 
 masses = st.floats(1e-8, 1e-3)
 
@@ -25,6 +25,18 @@ def real_of(
 
 def test_circular_limit_tends_to_two_sqrt_three() -> None:
     assert hill.gladman_critical_separation(1e-10, 1e-10, 1.0) == pytest.approx(2 * math.sqrt(3), rel=1e-3)
+
+
+def test_circular_limit_values_quoted_in_the_module_docstring() -> None:
+    """In mean-a mutual Hill radii the limit differs from 2 sqrt(3) only at order (m / M_*)^(2/3)."""
+    doc = hill.__doc__ or ""
+    earth = hill.gladman_critical_separation(MEARTH_IN_MSUN, MEARTH_IN_MSUN, 1.0)
+    jupiter = hill.gladman_critical_separation(MJUP_IN_MSUN, MJUP_IN_MSUN, 1.0)
+    assert f"{earth:.3f}" == "3.463" and "3.463 for two Earth-mass" in doc
+    assert f"{jupiter:.3f}" == "3.429" and "3.429 for two Jupiter-mass" in doc
+    # the deviation scales as mu^(2/3), not mu^(1/3)
+    dev = [2 * math.sqrt(3) - hill.gladman_critical_separation(m, m, 1.0) for m in (1e-8, 1e-6)]
+    assert dev[1] / dev[0] == pytest.approx(100 ** (2 / 3), rel=0.01)
 
 
 @given(m1=masses, m2=masses, ratio=st.floats(1.01, 3.0), m_star=st.floats(0.08, 3.0))

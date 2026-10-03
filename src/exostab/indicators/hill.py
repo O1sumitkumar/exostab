@@ -35,9 +35,14 @@ Three or more planets
     D12).
 
 The mutual Hill radius of planets j and k is ((m_j + m_k) / (3 M_*))^(1/3) (a_j + a_k) / 2, the
-convention of Chambers et al. (1996) and Pu & Wu (2015). In these units the Gladman limit for two
-Earth-mass planets is about 3.4 rather than exactly 2*sqrt(3), because conventions for the reference
-semi-major axis differ at order (m / M_*)^(1/3).
+convention of Chambers et al. (1996) and Pu & Wu (2015). In these units the circular-orbit Gladman
+limit evaluated here is 2*sqrt(3) up to terms of order (m / M_*)^(2/3): 3.463 for two Earth-mass
+planets and 3.429 for two Jupiter-mass planets around a solar-mass star. Lower values quoted
+elsewhere, such as 3.39 for Earth masses (Obertas et al. 2017, Eq. 5), come from the lowest-order
+criterion normalised to a_1, whose reference semi-major axis differs at order (m / M_*)^(1/3). Keeping
+the next-order Marchal-Bozis mass term of Veras & Armitage (2004, Eq. 2.5), omitted here, would lower
+the limit slightly (to 3.441 for Earth masses); omitting it is the conservative choice (DECISIONS.md,
+D12).
 """
 
 from __future__ import annotations
