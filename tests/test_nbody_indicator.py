@@ -5,11 +5,12 @@ from dataclasses import replace
 
 import pytest
 
-from conftest import two_planet_system
-from exostab.analysis import CheckSettings, check_system, overall_verdict
+from conftest import V, two_planet_system
+from exostab.analysis import CheckSettings, check_system, overall_verdict, upper_limit_inputs
 from exostab.indicators import AGREEMENT, DrawStats, IndicatorResult, Verdict, combine
 from exostab.indicators import megno as nb
 from exostab.integrate import RunResult
+from exostab.models import Provenance
 from exostab.sampling import realizations
 
 S, M, U, INC = Verdict.STABLE, Verdict.MARGINAL, Verdict.UNSTABLE, Verdict.INCONCLUSIVE
@@ -121,6 +122,14 @@ def ind(name: str, v: Verdict) -> IndicatorResult:
     return IndicatorResult(name=name, title=name, verdict=v, nominal_verdict=v, summary="")
 
 
+def nbody_ind(regular: int, encounters: int = 0, chaotic: int = 0, **nominal: object) -> IndicatorResult:
+    """N-body result from a nominal run (``nominal`` overrides), the given draws and an agreeing IAS15 run."""
+    runs = [result(**nominal)]
+    runs += [result(label="draw")] * regular + [result(label="draw", megno=5.0)] * chaotic
+    runs += [result(label="draw", status="encounter", t_end=5.0)] * encounters
+    return nb.evaluate(runs, result(**{**nominal, "integrator": "ias15"}))
+
+
 @pytest.mark.parametrize(
     ("hill", "amd", "nbody", "expected"),
     [
@@ -141,6 +150,59 @@ def test_overall_verdict_is_conservative(
     assert o.verdict is expected
     if expected is not S:
         assert o.reasons
+
+
+def test_overall_unstable_states_the_draw_counts() -> None:
+    o = overall_verdict(
+        {"hill": ind("hill", U), "amd": ind("amd", U), "nbody": nbody_ind(1, 19, status="encounter")}
+    )
+    assert o.verdict is U
+    assert "for the nominal parameters and for 19 of 20 draws within the published uncertainties" in o.summary
+
+
+def test_unstable_nbody_resting_on_upper_limits_is_not_overall_unstable() -> None:
+    """HD 215152 was "unstable" with its masses set to astrometric upper limits about 300 x m sin i."""
+    inds = {"hill": ind("hill", U), "amd": ind("amd", M), "nbody": nbody_ind(0, 20, status="encounter")}
+    o = overall_verdict(inds, upper_limits=["masses of X b and X c"])
+    assert o.verdict is M
+    assert "(masses of X b and X c)" in o.summary and "does not show that the system is unstable" in o.summary
+    assert "within the published uncertainties" not in o.summary
+    assert "Only upper limits are published for: masses of X b and X c." in o.reasons
+    # A limit is the worst case for stability, so a stable result at the limits stands.
+    stable = {"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbody_ind(20)}
+    assert overall_verdict(stable, upper_limits=["mass of X b"]).verdict is S
+
+
+def test_upper_limit_inputs() -> None:
+    s = two_planet_system()
+    assert upper_limit_inputs(s) == []
+    ul = Provenance.UPPER_LIMIT
+    b, c = s.planets
+    s = s.model_copy(
+        update={
+            "star": s.star.model_copy(update={"mass_msun": V(1.0, provenance=ul)}),
+            "planets": (
+                b.model_copy(
+                    update={"mass_earth": V(10.0, provenance=ul), "eccentricity": V(0.1, provenance=ul)}
+                ),
+                c.model_copy(update={"mass_earth": V(10.0, provenance=ul)}),
+            ),
+        }
+    )
+    assert upper_limit_inputs(s) == ["stellar mass", "masses of Test b and Test c", "eccentricity of Test b"]
+
+
+def test_check_system_with_upper_limit_masses_is_never_unstable() -> None:
+    """Two planets 5% apart in period with masses below 1000 Earth masses: every run has a close encounter."""
+    s = two_planet_system(period_ratio=1.05, m_earth=(1000.0, 1000.0))
+    planets = tuple(
+        p.model_copy(update={"mass_earth": V(1000.0, provenance=Provenance.UPPER_LIMIT)}) for p in s.planets
+    )
+    s = s.model_copy(update={"planets": planets})
+    res = check_system(s, CheckSettings(orbits=300, draws=3, seed=0, jobs=1, n_samples=5, ias15_check=False))
+    assert res.report.indicators["nbody"].verdict is U
+    assert res.report.overall.verdict is M
+    assert "masses of Test b and Test c" in res.report.overall.summary
 
 
 def test_check_system_end_to_end_small() -> None:
