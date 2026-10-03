@@ -84,8 +84,8 @@ workflow so the catalog page is updated. The full log is in the run's `catalog` 
 
 ## Cutting a release
 
-1. Check that CI and the nightly validation suite pass on `main` (Actions tab). The release workflow runs only
-   the fast suite.
+1. Check that CI and the nightly validation suite pass on `main` (Actions tab). The release workflow runs both
+   suites again and stops before publishing if either fails.
 2. Choose the version `X.Y.Z` ([semantic versioning](https://semver.org/)) and set it in three places:
    - `src/exostab/__init__.py`: `__version__ = "X.Y.Z"`;
    - `CITATION.cff`: `version: "X.Y.Z"` and `date-released: "YYYY-MM-DD"` (the release date);
@@ -102,8 +102,8 @@ workflow so the catalog page is updated. The full log is in the run's `catalog` 
 5. The Release workflow then:
    - checks that the tag, `__version__` and `CITATION.cff` give the same version, that `CITATION.cff` has a
      `date-released`, and that `CHANGELOG.md` has a section for the version;
-   - builds the wheel and sdist and tests the wheel (ruff, mypy, fast suite, CLI) on Ubuntu and macOS with
-     Python 3.10 and 3.14;
+   - builds the wheel and sdist and tests the wheel on Ubuntu and macOS: ruff, mypy, the fast suite and the CLI
+     with Python 3.10 and 3.14, and the validation suite (`pytest -m slow`) with Python 3.12;
    - uploads to PyPI if `PUBLISH_PYPI` is `true`;
    - creates the GitHub release with the CHANGELOG section as notes; Zenodo archives it.
 6. If the workflow fails before anything is published, fix the problem on `main`, delete the tag

@@ -1,7 +1,8 @@
 name: Release
 
-# Pushing a tag vX.Y.Z builds the package, tests the built wheel, publishes it to PyPI (only when enabled) and
-# creates the GitHub release, which Zenodo archives. Setup and the release checklist: RELEASING.md.
+# Pushing a tag vX.Y.Z builds the package, tests the built wheel (fast suite and validation suite), publishes it
+# to PyPI (only when enabled) and creates the GitHub release, which Zenodo archives. Setup and the release
+# checklist: RELEASING.md.
 
 on:
   push:
@@ -78,8 +79,36 @@ jobs:
           exostab check "TOI-270" --offline --orbits 2000 --draws 3 --out smoke/
           test -f smoke/report.json && test -f smoke/orbits.png && test -f smoke/megno.png
 
+  validation:
+    # The slow validation suite (as in nightly.yml) must pass too: a version is not published while a
+    # comparison with published results fails.
+    needs: build
+    name: validation / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      EXOSTAB_OFFLINE: "1"
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Install the wheel with the test dependencies
+        run: |
+          wheel=$(ls dist/*.whl)
+          python -m pip install "$wheel[dev]"
+      - name: Validation suite against the installed wheel
+        run: pytest -m slow -v
+
   pypi:
-    needs: [build, test]
+    needs: [build, test, validation]
     # Runs once the PyPI trusted publisher exists and the repository variable PUBLISH_PYPI is "true"
     # (RELEASING.md); until then releases are published on GitHub only.
     if: vars.PUBLISH_PYPI == 'true'
@@ -97,8 +126,10 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   github-release:
-    needs: [build, test, pypi]
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.test.result == 'success' && needs.pypi.result != 'failure' }}
+    needs: [build, test, validation, pypi]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && needs.test.result == 'success'
+      && needs.validation.result == 'success' && needs.pypi.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write  # creating the release also triggers the Zenodo archive once the integration is enabled
