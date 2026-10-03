@@ -253,10 +253,14 @@ def sweep(
         SweepParam,
         typer.Option("--param", help="e (eccentricity), mass (Earth masses), period (days) or omega (deg)."),
     ] = SweepParam.e,
-    value_range: Annotated[tuple[float, float], typer.Option("--range", help="Start and end values.")] = (
-        0.0,
-        0.5,
-    ),
+    value_range: Annotated[
+        tuple[float, float] | None,
+        typer.Option(
+            "--range",
+            help="Start and end values, in the unit of --param \\[default for e: 0 0.5; required for mass, "
+            "period and omega].",
+        ),
+    ] = None,
     steps: Annotated[int, typer.Option("--steps", help="Number of values.", min=2)] = 25,
     from_file: FileOpt = None,
     orbits: OrbitsOpt = 1e4,
@@ -269,8 +273,19 @@ def sweep(
     offline: OfflineOpt = False,
 ) -> None:
     """Vary one parameter of one planet and record every indicator (nominal parameters otherwise)."""
-    from .sweep import run_sweep, write_sweep
+    from .sweep import check_value, run_sweep, write_sweep
 
+    if value_range is None:
+        if param is not SweepParam.e:
+            err_console.print(f"[red]--range is required with --param {param.value}.[/red]")
+            raise typer.Exit(2)
+        value_range = (0.0, 0.5)
+    try:
+        for end in value_range:
+            check_value(param.value, end)
+    except ValueError as exc:
+        err_console.print(f"[red]--range: {exc}.[/red]")
+        raise typer.Exit(2) from exc
     system = _load(name, from_file, refresh, offline)
     try:
         system.planet(planet)

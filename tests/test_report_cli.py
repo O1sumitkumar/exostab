@@ -252,19 +252,55 @@ def test_sweep_other_parameters(tmp_path: Path, param: str, rng: tuple[str, str]
     assert r.exit_code == 0, r.output
 
 
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--param", "mass"], "--range is required"),  # the e default (0 0.5) is not a valid mass or period
+        (["--param", "period"], "--range is required"),
+        (["--param", "omega"], "--range is required"),
+        (["--param", "e", "--range", "0", "1"], "eccentricity must be in [0, 1)"),
+        (["--param", "mass", "--range", "0", "10"], "mass must be positive"),
+        (["--param", "omega", "--range", "0", "nan"], "must be a finite number"),
+    ],
+)
+def test_sweep_rejects_invalid_ranges(args: list[str], message: str, tmp_path: Path) -> None:
+    r = runner.invoke(
+        app,
+        [
+            "sweep",
+            "HD 127195",
+            "--planet",
+            "c",
+            *args,
+            "--steps",
+            "2",
+            "--orbits",
+            "100",
+            "--out",
+            str(tmp_path),
+        ],
+    )
+    assert r.exit_code == 2, r.output
+    assert message in " ".join(r.output.split()) and not list(tmp_path.iterdir())
+
+
 def test_sweep_rejects_invalid_values() -> None:
     from exostab.sampling import realizations
-    from exostab.sweep import _modified
+    from exostab.sweep import _modified, run_sweep
 
     nom = realizations(two_planet_system(), 0, seed=0)[0]
     for param, value, match in (
         ("e", 1.2, "eccentricity"),
         ("mass", -1.0, "mass"),
         ("period", 0.0, "period"),
+        ("omega", math.inf, "finite"),
         ("bogus", 1.0, "unknown"),
     ):
         with pytest.raises(ValueError, match=match):
             _modified(nom, 0, param, value)
+    # the ends of the range are checked before anything is integrated
+    with pytest.raises(ValueError, match="eccentricity"):
+        run_sweep(two_planet_system(), "b", "e", (0.0, 1.0), 3, orbits=1e9)
 
 
 def test_catalog_build(tmp_path: Path) -> None:

@@ -70,7 +70,7 @@ $ exostab sweep [OPTIONS] [name]
 
 * `--planet <str>`: Planet letter or full name, e.g. &#x27;b&#x27;.  [default: b]
 * `--param <e|mass|period|omega>`: e (eccentricity), mass (Earth masses), period (days) or omega (deg).  [default: e]
-* `--range <float float>...`: Start and end values.  [default: 0.0, 0.5]
+* `--range <float float>...`: Start and end values, in the unit of --param [default for e: 0 0.5; required for mass, period and omega].
 * `--steps <int range>`: Number of values.  [default: 25; x&gt;=2]
 * `--from-file <file>`: Read the system from a YAML file instead of the archive.
 * `--orbits <float range>`: N-body run length, in orbits of the innermost planet.  [default: 10000.0; x&gt;=10]

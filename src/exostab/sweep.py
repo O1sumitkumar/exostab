@@ -33,23 +33,28 @@ PARAM_LABELS = {
 }
 
 
+def check_value(param: str, value: float) -> None:
+    """Raise ValueError unless ``value`` is a valid value of the swept parameter ``param``."""
+    if param not in PARAM_LABELS:
+        raise ValueError(f"unknown sweep parameter {param!r}")
+    if not math.isfinite(value):
+        raise ValueError(f"{PARAM_LABELS[param]} must be a finite number, got {value}")
+    if param == "e" and not 0 <= value < 1:
+        raise ValueError(f"eccentricity must be in [0, 1), got {value}")
+    if param in ("mass", "period") and value <= 0:
+        raise ValueError(f"{param} must be positive, got {value}")
+
+
 def _modified(nominal: Realization, index: int, param: str, value: float) -> Realization:
+    check_value(param, value)
     if param == "e":
-        if not 0 <= value < 1:
-            raise ValueError(f"eccentricity must be in [0, 1), got {value}")
         r = nominal.with_body(index, e=value)
     elif param == "mass":
-        if value <= 0:
-            raise ValueError(f"mass must be positive, got {value}")
         r = nominal.with_body(index, m=mearth_to_msun(value))
     elif param == "period":
-        if value <= 0:
-            raise ValueError(f"period must be positive, got {value}")
         r = nominal.with_body(index, P=days_to_years(value))
-    elif param == "omega":
-        r = nominal.with_body(index, pomega=math.radians(value) % (2 * math.pi))
     else:
-        raise ValueError(f"unknown sweep parameter {param!r}")
+        r = nominal.with_body(index, pomega=math.radians(value) % (2 * math.pi))
     return replace(r, bodies=tuple(sorted(r.bodies, key=lambda b: b.P)), label=f"{param} = {value:.6g}")
 
 
@@ -65,6 +70,8 @@ def run_sweep(
     jobs: int | None = None,
 ) -> list[dict[str, Any]]:
     """Indicators for ``steps`` values of ``param`` between the two ends of ``value_range``."""
+    for end in value_range:  # every swept value lies between the two ends, and each valid set is an interval
+        check_value(param, end)
     target = system.planet(planet).name
     nominal = realizations(system, 0, seed)[0]
     index = [b.name for b in nominal.bodies].index(target)
