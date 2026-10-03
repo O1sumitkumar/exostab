@@ -11,8 +11,9 @@ Sampling rules (also listed in ``docs/data-assumptions.md``):
   above the value and another below it). Values without published errors are held fixed.
 * Eccentricities below zero are set to zero, as in the HD 127195 Research Note; eccentricities are
   capped at ``E_MAX``. Masses, periods and the stellar mass are redrawn until positive.
-* Upper limits: the nominal run uses the limit itself (the worst case for stability); draws are
-  uniform between zero and the limit.
+* Upper limits, allowed only on planet masses and eccentricities: the nominal run uses the limit itself
+  (the worst case for stability); draws are uniform between zero and the limit. An upper limit on any
+  other value (stellar mass, period, angle, reference time) is refused.
 * Orbital phases are propagated from the published reference time to the common epoch ``t0`` with the
   drawn period, so period and timing uncertainties both enter the draws.
 * ``inclination_prior="isotropic"`` draws one inclination per run for the whole (coplanar) system with
@@ -196,6 +197,26 @@ def _sin_i(rng: np.random.Generator, prior: InclinationPrior, draw: bool) -> flo
     return math.sqrt(1 - cos_i**2)
 
 
+def _refuse_misplaced_limits(system: System) -> None:
+    """Upper limits make sense only for planet masses and eccentricities (see the module docstring).
+
+    Drawn uniformly from zero, a limited stellar mass gives stars of almost no mass (and its limit is the
+    most stable case, not the worst), a limited period reorders the planets, and a limited angle or
+    reference time is meaningless.
+    """
+    values = [("stellar mass", system.star.mass_msun)]
+    for p in system.planets:
+        values += [(f"{p.name} period", p.period_days), (f"{p.name} omega", p.omega_deg)]
+        if p.phase.value is not None:
+            values.append((f"{p.name} phase", p.phase.value))
+    limited = [what for what, v in values if v.provenance is Provenance.UPPER_LIMIT]
+    if limited:
+        raise ValueError(
+            f"{system.name}: an upper limit is only supported for planet masses and eccentricities, not for "
+            + ", ".join(limited)
+        )
+
+
 def realize(
     system: System,
     rng: np.random.Generator,
@@ -205,6 +226,7 @@ def realize(
     inclination_prior: InclinationPrior = "none",
 ) -> Realization:
     """Build one realization. ``draw=False`` gives the nominal run."""
+    _refuse_misplaced_limits(system)
     t0 = choose_epoch(system)
 
     def pick(v: Value, *, positive: bool = False) -> float:

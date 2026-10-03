@@ -210,3 +210,15 @@ def test_star_and_period_missing_errors_are_fixed_in_draws() -> None:
     reals = sampling.realizations(s, 3, seed=0)
     assert {r.m_star for r in reals} == {1.0}
     assert {r.bodies[1].P for r in reals} == {days_to_years(20.0)}
+
+
+def test_upper_limits_outside_masses_and_eccentricities_are_refused() -> None:
+    # A stellar mass drawn uniformly from 0 to its limit inflates the planet-to-star mass ratios many times,
+    # and the limit is the most stable choice, not the worst case.
+    s = two_planet_system()
+    star = s.star.model_copy(update={"mass_msun": V(1.0, provenance=Provenance.UPPER_LIMIT)})
+    with pytest.raises(ValueError, match="upper limit"):
+        sampling.realizations(s.model_copy(update={"star": star}), 3, seed=0)
+    p = s.planets[1].model_copy(update={"period_days": V(250.0, provenance=Provenance.UPPER_LIMIT)})
+    with pytest.raises(ValueError, match="Test c period"):
+        sampling.realizations(s.model_copy(update={"planets": (s.planets[0], p)}), 3, seed=0)

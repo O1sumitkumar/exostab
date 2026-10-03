@@ -1,7 +1,8 @@
 """User-supplied systems in YAML.
 
 A value can be a number, or a mapping with ``value`` and optional ``err`` (symmetric), ``err_plus`` /
-``err_minus`` (asymmetric), ``upper_limit: true`` and ``reference``. Units are part of the key names.
+``err_minus`` (asymmetric), ``upper_limit: true`` (planet masses and eccentricities only) and ``reference``.
+Units are part of the key names.
 See ``examples/two_planet.yaml`` for a complete example::
 
     name: My system
@@ -76,7 +77,9 @@ _PHASE_KEYS = {
 }
 
 
-def _value(raw: Any, *, scale: float = 1.0, reference: str | None = None, where: str = "") -> Value:
+def _value(
+    raw: Any, *, scale: float = 1.0, reference: str | None = None, where: str = "", allow_limit: bool = False
+) -> Value:
     if isinstance(raw, bool) or raw is None:
         raise SystemFileError(f"{where}: expected a number or a mapping, got {raw!r}")
     if isinstance(raw, (int, float)):
@@ -88,6 +91,13 @@ def _value(raw: Any, *, scale: float = 1.0, reference: str | None = None, where:
         raise SystemFileError(f"{where}: unknown keys {sorted(unknown)}")
     if "value" not in raw:
         raise SystemFileError(f"{where}: missing 'value'")
+    limit = raw.get("upper_limit", False)
+    if not isinstance(limit, bool):
+        raise SystemFileError(f"{where}: upper_limit must be true or false, got {limit!r}")
+    if limit and not allow_limit:
+        # Draws are uniform between 0 and an upper limit: meaningful for a planet mass or an eccentricity, not
+        # for a stellar mass, a period, an angle or an absolute time.
+        raise SystemFileError(f"{where}: upper_limit is only supported for planet masses and eccentricities")
     err_p = raw.get("err_plus", raw.get("err"))
     err_m = raw.get("err_minus", raw.get("err"))
     try:
@@ -95,7 +105,7 @@ def _value(raw: Any, *, scale: float = 1.0, reference: str | None = None, where:
             value=float(raw["value"]) * scale,
             err_plus=None if err_p is None else abs(float(err_p)) * scale,
             err_minus=None if err_m is None else abs(float(err_m)) * scale,
-            provenance=Provenance.UPPER_LIMIT if raw.get("upper_limit") else Provenance.MEASURED,
+            provenance=Provenance.UPPER_LIMIT if limit else Provenance.MEASURED,
             reference=raw.get("reference", reference),
         )
     except (TypeError, ValueError) as exc:
@@ -138,7 +148,9 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
         scale = {"mass_earth": 1.0, "mass_jupiter": MJUP_IN_MEARTH, "mass_msun": 1 / MEARTH_IN_MSUN}[
             mass_keys[0]
         ]
-        mass = _value(raw[mass_keys[0]], scale=scale, reference=ref, where=f"{name}.{mass_keys[0]}")
+        mass = _value(
+            raw[mass_keys[0]], scale=scale, reference=ref, where=f"{name}.{mass_keys[0]}", allow_limit=True
+        )
         if kind is MassKind.MINIMUM:
             flags.append(
                 _flag(
@@ -205,7 +217,7 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
 
     # eccentricity and argument of periastron
     if "eccentricity" in raw:
-        ecc = _value(raw["eccentricity"], reference=ref, where=f"{name}.eccentricity")
+        ecc = _value(raw["eccentricity"], reference=ref, where=f"{name}.eccentricity", allow_limit=True)
         if ecc.provenance is Provenance.UPPER_LIMIT:
             flags.append(
                 _flag(

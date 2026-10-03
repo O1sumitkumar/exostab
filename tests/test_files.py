@@ -160,3 +160,34 @@ def test_upper_limit_mass_flag(tmp_path: Path) -> None:
         write(tmp_path, GOOD.replace("mass_earth: 5", "mass_earth: {value: 5, upper_limit: true}"))
     )
     assert "mass_upper_limit" in {f.rule for f in s.flags}
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        ("mass_msun: 1.0", "mass_msun: {value: 1.0, upper_limit: true}"),
+        ("period_days: 10", "period_days: {value: 10, upper_limit: true}"),
+        ("mass_earth: 5", "mass_earth: 5, omega_deg: {value: 90, upper_limit: true}"),
+        ("mass_earth: 5", "mass_earth: 5, transit_time_jd: {value: 2460000.0, upper_limit: true}"),
+        ("mass_earth: 5", "mass_earth: 5, mean_longitude_deg: {value: 30, upper_limit: true}"),
+        ("mass_earth: 5", "mass_earth: 5, radius_earth: {value: 2, upper_limit: true}"),
+    ],
+)
+def test_upper_limits_only_on_planet_masses_and_eccentricities(
+    tmp_path: Path, change: tuple[str, str]
+) -> None:
+    # Draws are uniform between 0 and an upper limit: meaningful for a planet mass or an eccentricity, not for a
+    # stellar mass, a period, an angle or an absolute time, which used to be accepted without any flag.
+    with pytest.raises(SystemFileError, match="upper_limit"):
+        load_system_file(write(tmp_path, GOOD.replace(*change)))
+
+
+def test_upper_limit_must_be_a_boolean(tmp_path: Path) -> None:
+    # the quoted string "no" is truthy and used to count as an upper limit
+    text = GOOD.replace("mass_earth: 8", 'mass_earth: 8, eccentricity: {value: 0.1, upper_limit: "no"}')
+    with pytest.raises(SystemFileError, match="true or false"):
+        load_system_file(write(tmp_path, text))
+    s = load_system_file(write(tmp_path, text.replace('"no"', "false")))
+    assert s.planet("c").eccentricity.provenance is Provenance.MEASURED
+    s = load_system_file(write(tmp_path, text.replace('"no"', "true")))
+    assert s.planet("c").eccentricity.provenance is Provenance.UPPER_LIMIT

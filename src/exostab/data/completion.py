@@ -6,7 +6,8 @@ report and stored in the JSON output. The rules (DECISIONS.md, D11):
 Stellar mass
     The planet rows of one host can give different stellar masses (the composite table picks them per
     planet). The median of the rows is used, for an even number of rows the lower middle value, and the
-    disagreement is flagged with every value and its reference.
+    disagreement is flagged with every value and its reference. Limits on the stellar mass are not used;
+    a system with only a limit is rejected.
 Period
     Published period used when present. Otherwise derived from the semi-major axis with Kepler's third
     law ("derived"), except for planets found by microlensing or direct imaging, whose ``pl_orbsmax`` can
@@ -98,6 +99,11 @@ def _star_mass_key(row: Row) -> tuple[float, str, str, str]:
     return float(row["st_mass"]), str(row.get("st_masserr1")), str(row.get("st_masserr2")), ref
 
 
+def _star_mass_rows(rows: Sequence[Row]) -> list[Row]:
+    """Rows with a measured stellar mass (not missing, not a limit)."""
+    return [r for r in rows if r.get("st_mass") is not None and r.get("st_masslim") not in (1, -1)]
+
+
 def star_mass_row(rows: Sequence[Row]) -> Row | None:
     """The planet row whose stellar mass is used for the whole system, or None if no row has one.
 
@@ -106,9 +112,9 @@ def star_mass_row(rows: Sequence[Row]) -> Row | None:
     rule is the median of the rows' values, for an even number of rows the lower of the two middle values
     (a smaller star gives larger planet-to-star mass ratios, the less stable choice). Among rows with that
     value, the most common (errors, reference) wins, then the first in sort order, so the result never
-    depends on the row order.
+    depends on the row order. Limits on the stellar mass are not values and are not used.
     """
-    usable = [r for r in rows if r.get("st_mass") is not None]
+    usable = _star_mass_rows(rows)
     if not usable:
         return None
     values = sorted(float(r["st_mass"]) for r in usable)
@@ -129,7 +135,7 @@ def _star_mass_entry(row: Row) -> str:
 
 def _star_mass_flag(rows: Sequence[Row], chosen: Row) -> CompletionFlag | None:
     """Flag listing the stellar masses of the planet rows when they disagree."""
-    usable = [r for r in rows if r.get("st_mass") is not None]
+    usable = _star_mass_rows(rows)
     groups: dict[tuple[float, str, str, str], list[Row]] = {}
     for r in usable:
         groups.setdefault(_star_mass_key(r), []).append(r)
@@ -158,18 +164,30 @@ def complete_star(rows: Sequence[Row]) -> tuple[Star, list[CompletionFlag]]:
         raise IncompleteSystemError(
             f"{host} is a circumbinary system; exostab models a single host star and cannot check it."
         )
+    # A limit on the stellar mass is not used: drawing the mass uniformly below an upper limit gives stars of
+    # almost no mass, and the limit itself is the most stable choice (Hill radii scale as M*^(-1/3)).
+    limits = [r for r in rows if r.get("st_mass") is not None and r.get("st_masslim") in (1, -1)]
     chosen = star_mass_row(rows)
+    if chosen is None and limits:
+        raise IncompleteSystemError(
+            f"{host}: the archive gives only a limit on the stellar mass; supply a measured stellar mass with "
+            "--from-file."
+        )
     if chosen is None:
         raise IncompleteSystemError(f"{host}: the stellar mass is missing; supply it with --from-file.")
     mass = _value(chosen, "st_mass")
     inconsistent = _star_mass_flag(rows, chosen)
     if inconsistent is not None:
         flags.append(inconsistent)
-    if chosen.get("st_masslim") == 1:
-        mass = mass.model_copy(update={"provenance": Provenance.UPPER_LIMIT})
+    if limits:
         flags.append(
             _flag(
-                None, "st_mass", "star_mass_upper_limit", "Stellar mass is an upper limit; the limit is used."
+                None,
+                "st_mass",
+                "star_mass_limit_ignored",
+                "The rows of "
+                + ", ".join(sorted(str(r["pl_name"]) for r in limits))
+                + " give only a limit on the stellar mass; the measured value of the other rows is used.",
             )
         )
     n_stars = int(r0.get("sy_snum") or 1)

@@ -298,10 +298,22 @@ def test_star_rules() -> None:
         system_from_rows(pair(cb_flag=1), INFO)
     with pytest.raises(IncompleteSystemError, match="stellar mass"):
         system_from_rows([row("Host b", st_mass=None), row("Host c", pl_orbper=25.0, st_mass=None)], INFO)
-    rows = [row("Host b", sy_snum=2, st_masslim=1), row("Host c", pl_orbper=25.0)]
-    assert {"companion_stars_ignored", "star_mass_upper_limit"} <= rules(rows)
+    assert "companion_stars_ignored" in rules([row("Host b", sy_snum=2), row("Host c", pl_orbper=25.0)])
     with pytest.raises(IncompleteSystemError, match="only one planet"):
         system_from_rows([row("Host b")], INFO)
+
+
+@pytest.mark.parametrize("lim", [1, -1])
+def test_stellar_mass_limits_are_not_used(lim: int) -> None:
+    # An upper limit used to be drawn uniformly between 0 and the limit (masses near 0, the planet-to-star mass
+    # ratios inflated many times) under a flag saying "the limit is used". A limit is not a stellar mass.
+    with pytest.raises(IncompleteSystemError, match="only a limit on the stellar mass"):
+        system_from_rows([row("Host b", st_masslim=lim), row("Host c", pl_orbper=25.0, st_masslim=lim)], INFO)
+    # a measured value in another row is used, and the ignored limit is reported
+    s = system_from_rows([row("Host b", st_mass=0.6, st_masslim=lim), row("Host c", pl_orbper=25.0)], INFO)
+    assert s.star.mass_msun.value == 1.0 and s.star.mass_msun.provenance is Provenance.MEASURED
+    flag = next(f for f in s.flags if f.rule == "star_mass_limit_ignored")
+    assert "Host b" in flag.message
 
 
 def _kepler114_like() -> list[dict[str, Any]]:
