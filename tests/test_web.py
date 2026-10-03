@@ -269,6 +269,19 @@ def test_what_if_with_a_cleared_period(planet: str) -> None:
     assert at.error and "a value is missing" in at.error[0].value
 
 
+def test_app_reports_a_broken_spock_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EXOSTAB_SPOCK_PYTHON", "/nonexistent/python")
+    at = _what_if_app("TOI-270", orbits="100", draws="1", run="1", spock="1")
+    assert at.error and "SPOCK could not be run" in at.error[0].value
+    # SPOCK and the automatic run are switched off, also in the link, so a rerun does not repeat the failure
+    state = at.session_state["state"]
+    assert not state.spock and not state.run
+    assert "spock" not in at.query_params and "run" not in at.query_params
+    at.run()
+    assert not at.exception and not at.error, (at.exception, at.error)
+    assert not next(c for c in at.checkbox if c.label.startswith("Add SPOCK")).value
+
+
 @pytest.fixture
 def fake_budget(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     """The web app with a fixed, cheap budget plan (200 orbits, 1 draw; 1e-3 and 1e-2 s per orbit for WHFast

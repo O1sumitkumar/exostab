@@ -27,7 +27,7 @@ from ..data import IncompleteSystemError, load_rows, system_from_rows
 from ..data.archive import ArchiveError, group_by_host
 from ..data.names import SystemNotFoundError, resolve_host
 from ..indicators import Verdict
-from ..indicators.spock import spock_python
+from ..indicators.spock import SpockUnavailableError, spock_python
 from ..models import System
 from ..plots import megno_figure, orbits_figure
 from ..report import ACKNOWLEDGMENT, group_flags
@@ -413,13 +413,21 @@ def main() -> None:
     if run_clicked or state.run:
         state.run = True
         system_json = modified.model_dump_json()
-        with st.spinner("Integrating… (cached results appear instantly)"):
-            settings, note = _run_settings(state, system_json)
-            key = input_hash(modified, settings)
-            result = _run(system_json, json.dumps(settings, sort_keys=True), key)
-        if note:
-            st.warning(note)
-        _results(result, state)
+        try:
+            with st.spinner("Integrating… (cached results appear instantly)"):
+                settings, note = _run_settings(state, system_json)
+                key = input_hash(modified, settings)
+                result = _run(system_json, json.dumps(settings, sort_keys=True), key)
+        except SpockUnavailableError as exc:
+            # failures are not cached: switch SPOCK and the automatic run off, or every rerun repeats the call
+            state.spock = state.run = False
+            st.error(
+                f"SPOCK could not be run, so it has been switched off: {exc}. Press Run to check without it."
+            )
+        else:
+            if note:
+                st.warning(note)
+            _results(result, state)
     st.query_params.from_dict(encode_state(state))
     st.divider()
     st.caption(ACKNOWLEDGMENT)
