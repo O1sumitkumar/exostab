@@ -118,8 +118,11 @@ def test_integrate_all_serial_and_parallel_agree() -> None:
 # ------------------------------------------------------------------------------------------ overall verdict
 
 
-def ind(name: str, v: Verdict) -> IndicatorResult:
-    return IndicatorResult(name=name, title=name, verdict=v, nominal_verdict=v, summary="")
+def ind(name: str, v: Verdict, draws: list[Verdict] | None = None) -> IndicatorResult:
+    """An indicator result whose draws (20 sharing its verdict by default; [] for none) are as given."""
+    d = [v] * 20 if draws is None else draws
+    stats = DrawStats.from_verdicts(d) if d else None
+    return IndicatorResult(name=name, title=name, verdict=v, nominal_verdict=v, summary="", draws=stats)
 
 
 def nbody_ind(regular: int, encounters: int = 0, chaotic: int = 0, **nominal: object) -> IndicatorResult:
@@ -203,6 +206,23 @@ def test_check_system_with_upper_limit_masses_is_never_unstable() -> None:
     assert res.report.indicators["nbody"].verdict is U
     assert res.report.overall.verdict is M
     assert "masses of Test b and Test c" in res.report.overall.summary
+
+
+def test_no_draws_never_give_a_confident_overall_verdict() -> None:
+    """With --draws 0 nothing was tested against the uncertainties."""
+    o = overall_verdict({"hill": ind("hill", S, []), "amd": ind("amd", S, []), "nbody": nbody_ind(0)})
+    assert o.verdict is M and "--draws 0" in o.summary and o.reasons
+    o = overall_verdict(
+        {"hill": ind("hill", U, []), "amd": ind("amd", U, []), "nbody": nbody_ind(0, status="encounter")}
+    )
+    assert o.verdict is M and "--draws 0" in o.summary
+    assert "draws within" not in o.summary and "almost all draws" not in o.summary
+    o = overall_verdict(
+        {"hill": ind("hill", S, []), "amd": ind("amd", S, []), "nbody": nbody_ind(0, energy_error=1e-3)}
+    )
+    assert o.verdict is INC  # an untrustworthy integration stays inconclusive
+    res = check_system(two_planet_system(err=True), CheckSettings(orbits=300, draws=0, jobs=1, n_samples=5))
+    assert res.report.indicators["nbody"].verdict is S and res.report.overall.verdict is M
 
 
 def test_check_system_end_to_end_small() -> None:

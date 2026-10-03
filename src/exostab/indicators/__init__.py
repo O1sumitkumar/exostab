@@ -10,6 +10,10 @@ Each indicator returns an :class:`IndicatorResult` with one of four verdicts:
 * ``inconclusive`` – the indicator could not be evaluated reliably (for example, the integration's
   energy error was too large).
 
+Without Monte Carlo draws (``--draws 0``) an indicator reports its nominal verdict, untested against the
+uncertainties (its ``draws`` is None), and the overall verdict is at most ``marginal``
+(:func:`exostab.analysis.overall_verdict`).
+
 The analytic indicators (Hill spacing and AMD) are *sufficient* conditions or heuristics: failing them
 means stability is not guaranteed, not that the system must fall apart. Resonant systems such as
 GJ 876 fail both and are nevertheless long-lived. The report explains this next to every verdict.
@@ -79,7 +83,8 @@ def combine(nominal: Verdict, draws: Sequence[Verdict]) -> Verdict:
 
     The nominal verdict stands only if at least ``AGREEMENT`` of the draws share it; otherwise the
     result is ``marginal``. An inconclusive nominal run makes the whole indicator inconclusive, and so
-    does a set of draws of which more than 20% are inconclusive.
+    does a set of draws of which more than 20% are inconclusive. Without draws the nominal verdict is
+    returned unchanged: nothing tested it, and the overall verdict accounts for that.
     """
     if nominal is Verdict.INCONCLUSIVE:
         return Verdict.INCONCLUSIVE

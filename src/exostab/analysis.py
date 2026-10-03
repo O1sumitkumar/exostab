@@ -50,6 +50,13 @@ class CheckResult:
     extra: dict[str, object] = field(default_factory=dict)
 
 
+NO_DRAWS = (
+    "No Monte Carlo draws were run (--draws 0): the result holds for the nominal parameters only and was not "
+    "tested against the published uncertainties."
+)
+HORIZON = " The N-body test covers only the integrated time span, not the age of the system."
+
+
 def _join(items: Sequence[str]) -> str:
     """Join words as in prose: a; a and b; a, b and c."""
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
@@ -83,56 +90,75 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
     """Conservative combination of the per-indicator verdicts.
 
     * unstable: the direct N-body integration is unstable (close encounters or escapes in the nominal run
-      and in at least 95% of the draws), and that evidence does not rest on upper limits;
+      and in at least 95% of the draws), and that evidence rests neither on upper limits nor on the nominal
+      run alone;
     * inconclusive: the N-body integration could not be trusted;
-    * stable: every indicator says stable (including SPOCK when it is enabled);
+    * stable: every indicator says stable (including SPOCK when it is enabled), and Monte Carlo draws were
+      run;
     * marginal: everything else, i.e. whenever the indicators disagree or any of them is marginal.
 
     ``upper_limits`` lists the inputs that are only published upper limits (:func:`upper_limit_inputs`). The
     nominal run uses each limit and the draws are uniform below it, which does not sample a measurement
     uncertainty. A limit on a mass or an eccentricity is the worst case for stability, so a stable result
-    still holds; an N-body instability, however, only constrains those values and gives "marginal".
+    still holds; an N-body instability, however, only constrains those values and gives "marginal". Without
+    Monte Carlo draws (``--draws 0``) nothing was tested against the uncertainties, so the verdict is at most
+    "marginal".
     """
-    nb = indicators["nbody"].verdict
-    others = {k: v for k, v in indicators.items() if k != "nbody"}
+    nb = indicators["nbody"]
+    others = [r for k, r in indicators.items() if k != "nbody"]
     not_stable = [
         f"{r.title}: {r.verdict.value}" for r in indicators.values() if r.verdict is not Verdict.STABLE
     ]
-    d = indicators["nbody"].draws
-    limits = _join(upper_limits) if upper_limits else ""
-    if nb is Verdict.UNSTABLE:
-        found = "Direct integration finds close encounters or escapes for the nominal parameters" + (
-            f" and for {d.unstable} of {d.n} draws" if d is not None else ""
-        )
-        if not upper_limits:
-            return Overall(
-                verdict=Verdict.UNSTABLE,
-                summary=found + (" within the published uncertainties." if d is not None else "."),
-                reasons=not_stable,
-            )
-        return Overall(
-            verdict=Verdict.MARGINAL,
-            summary=found + f". These runs use values that are only published upper limits ({limits}): the "
-            "nominal run takes each limit and the draws are uniform below it, so the instability may come from "
-            "values the system does not have. It constrains those values; it does not show that the system is "
-            "unstable.",
-            reasons=[*not_stable, f"Only upper limits are published for: {limits}."],
-        )
-    if nb is Verdict.INCONCLUSIVE:
+    if nb.verdict is Verdict.INCONCLUSIVE:
         return Overall(
             verdict=Verdict.INCONCLUSIVE,
             summary="The N-body integrations could not be trusted (see the N-body notes), so no overall verdict "
             "is given.",
             reasons=not_stable,
         )
-    if nb is Verdict.STABLE and all(r.verdict is Verdict.STABLE for r in others.values()):
+    n = nb.draws.n if nb.draws is not None else 0
+    encounters = nb.draws.unstable if nb.draws is not None else 0
+    limits = _join(upper_limits) if upper_limits else ""
+    caveats = [NO_DRAWS] if n == 0 else []
+    extra = [f"Only upper limits are published for: {limits}."] if upper_limits else []
+
+    if nb.verdict is Verdict.UNSTABLE:
+        found = "Direct integration finds close encounters or escapes for the nominal parameters" + (
+            f" and for {encounters} of {n} draws" if n else ""
+        )
+        if not upper_limits and n:
+            return Overall(
+                verdict=Verdict.UNSTABLE,
+                summary=found + " within the published uncertainties.",
+                reasons=not_stable,
+            )
+        sentences = [found + "."]
+        if upper_limits:
+            sentences.append(
+                f"These runs use values that are only published upper limits ({limits}): the nominal run "
+                "takes each limit and the draws are uniform below it, so the instability may come from values "
+                "the system does not have. It constrains those values; it does not show that the system is "
+                "unstable."
+            )
+        return Overall(
+            verdict=Verdict.MARGINAL,
+            summary=" ".join(sentences + caveats),
+            reasons=not_stable + extra + caveats,
+        )
+
+    if nb.verdict is Verdict.STABLE and all(r.verdict is Verdict.STABLE for r in others):
+        if n == 0:
+            return Overall(
+                verdict=Verdict.MARGINAL,
+                summary="Every indicator is stable for the nominal parameters. " + NO_DRAWS,
+                reasons=caveats,
+            )
         return Overall(
             verdict=Verdict.STABLE,
-            summary="All indicators agree: no sign of instability. The N-body test covers only the integrated "
-            "time span, not the age of the system.",
+            summary="All indicators agree: no sign of instability." + HORIZON,
             reasons=[],
         )
-    if nb is Verdict.STABLE:
+    if nb.verdict is Verdict.STABLE:
         summary = (
             "The N-body integration shows regular motion, but the analytic criteria cannot guarantee "
             "stability. This is typical of systems protected by mean-motion resonances or of compact systems "
@@ -143,7 +169,9 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
             "Mixed evidence: part of the parameter range allowed by the uncertainties is chaotic or unstable, "
             "or the indicators disagree."
         )
-    return Overall(verdict=Verdict.MARGINAL, summary=summary, reasons=not_stable)
+    return Overall(
+        verdict=Verdict.MARGINAL, summary=" ".join([summary, *caveats]), reasons=not_stable + caveats
+    )
 
 
 def check_system(system: System, settings: CheckSettings, *, command: str | None = None) -> CheckResult:
