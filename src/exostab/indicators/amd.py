@@ -53,10 +53,10 @@ Mean-motion-resonance overlap (Petit, Laskar & Boué 2017)
     eps > 3.1e-3, alpha_R is below 2^(-2/3) = 0.630, so the switching rule alone would apply C_MMR to
     pairs wide of the 2:1 resonance. exostab therefore uses C_MMR only for eps <= eps_lim and
     alpha > max(alpha_R, 2^(-2/3)), and C_c otherwise. A pair with eps > eps_lim, or with
-    alpha_R < alpha <= 2^(-2/3), lies outside the domain in which either criterion was validated: its
-    beta is computed with C_c and reported, but the system is never called AMD-stable (at most
-    marginal). eps_lim = 8.11e-3 is the exact root of alpha_cir(eps) = 2^(-2/3); the paper's 8.20e-3
-    follows from the rounded 1.46 and 0.63.
+    alpha_R < alpha <= 2^(-2/3), lies outside the domain Petit et al. state, and no published AMD
+    criterion accounts for resonance overlap there: its beta is computed with C_c and reported, but the
+    system is never called AMD-stable (at most marginal). eps_lim = 8.11e-3 is the exact root of
+    alpha_cir(eps) = 2^(-2/3); the paper's 8.20e-3 follows from the rounded 1.46 and 0.63.
 
 Hill stability in the AMD framework (Petit, Laskar & Boué 2018)
     For two planets (eps = (m + m') / M_*), the pair is Hill stable if its relative AMD C / Lambda' is below
@@ -266,8 +266,8 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
         )
         summary = (
             f"β < 1 for every pair (largest {_b(worst['beta'])}), but {', '.join(off)} "
-            f"{'lies' if len(off) == 1 else 'lie'} outside the domain in which Petit et al. (2017) validated "
-            f"the critical AMD, so AMD stability is not claimed{star}."
+            f"{'lies' if len(off) == 1 else 'lie'} outside the domain Petit et al. (2017) state for the "
+            f"critical AMD (see the notes), so AMD stability is not claimed{star}."
         )
     elif amd_stable:
         summary = (
