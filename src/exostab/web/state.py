@@ -76,6 +76,14 @@ def planet_rows(system: System) -> list[dict[str, Any]]:
     return rows
 
 
+def edited_rows(system: System, edits: dict[str, dict[str, float | None]]) -> list[dict[str, Any]]:
+    """Rows of the table with the edits applied (a cleared cell is None)."""
+    rows = planet_rows(system)
+    for r in rows:
+        r.update(edits.get(r["planet"], {}))
+    return rows
+
+
 def table_edits(system: System, rows: list[dict[str, Any]]) -> dict[str, dict[str, float | None]]:
     """Cells of the table that differ from the system's published values."""
     base = {r["planet"]: r for r in planet_rows(system)}

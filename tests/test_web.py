@@ -208,6 +208,67 @@ def test_app_rejects_circumbinary_and_reports_json() -> None:
     assert rep["settings"]["orbits"] == 200
 
 
+def _what_if_app(system: str, **params: str) -> AppTest:
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.query_params.update({"system": system, "source": "snapshot", **params})
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def _slider(at: AppTest, label: str) -> float:
+    return float(next(s.value for s in at.slider if s.label.startswith(label)))
+
+
+def test_what_if_is_not_set_by_selecting_a_planet() -> None:
+    # GJ 876 c lies 15.5 times further out than d, beyond the slider's old range (1.01-10): selecting it
+    # used to move c to 10 times d's period without the user touching a slider
+    at = _what_if_app("GJ 876")
+    next(s for s in at.selectbox if s.label == "Planet").select("GJ 876 c").run()
+    assert not at.exception, at.exception
+    state = at.session_state["state"]
+    assert state.whatif.planet == "GJ 876 c" and not state.whatif.is_active()
+    gj876 = load_system("GJ 876")
+    p_c, p_d = gj876.planet("c").period_days.value, gj876.planet("d").period_days.value
+    assert _slider(at, "Period ratio to GJ 876 d") == pytest.approx(p_c / p_d)
+    # moving the slider does set a what-if, which stays set on later reruns and comes back from the link
+    next(s for s in at.slider if s.label.startswith("Period ratio")).set_value(12.0).run()
+    assert at.session_state["state"].whatif.period_ratio == 12.0
+    at.run()
+    assert at.session_state["state"].whatif.period_ratio == 12.0 and _slider(at, "Period ratio") == 12.0
+    link = {k: at.query_params[k][0] for k in at.query_params}
+    at2 = _what_if_app("GJ 876", whatif=link["whatif"])
+    assert at2.session_state["state"].whatif == WhatIf(planet="GJ 876 c", period_ratio=12.0)
+
+
+def test_what_if_keeps_a_table_eccentricity_above_the_old_slider_range() -> None:
+    # the table accepts e up to 0.95; the eccentricity slider (innermost planet, selected by default) used to
+    # stop at 0.9 and overrode 0.93 with 0.9
+    at = _what_if_app("Kepler-36", edits=_b64({"Kepler-36 b": {"eccentricity": 0.93}}))
+    assert not at.session_state["state"].whatif.is_active()
+    assert _slider(at, "Eccentricity") == 0.93
+
+
+def test_what_if_neighbour_follows_the_edited_order() -> None:
+    # with c moved outside b (70 d > 61.1 d), b's inner neighbour is d, as in apply_changes
+    at = _what_if_app("GJ 876", edits=_b64({"GJ 876 c": {"period_days": 70.0}}))
+    next(s for s in at.selectbox if s.label == "Planet").select("GJ 876 b").run()
+    assert not at.exception and not at.error, (at.exception, at.error)
+    assert not at.session_state["state"].whatif.is_active()
+    assert any(s.label == "Period ratio to GJ 876 d" for s in at.slider)
+
+
+@pytest.mark.parametrize("planet", ["TRAPPIST-1 c", "TRAPPIST-1 d"])
+def test_what_if_with_a_cleared_period(planet: str) -> None:
+    # a cleared cell is None: the what-if box must not divide by it, and the run is refused with a message
+    at = _what_if_app(
+        "TRAPPIST-1",
+        edits=_b64({"TRAPPIST-1 c": {"period_days": None}}),
+        whatif=_b64({"planet": planet, "mass_factor": 2.0}),
+    )
+    assert at.error and "a value is missing" in at.error[0].value
+
+
 @pytest.fixture
 def fake_budget(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     """The web app with a fixed, cheap budget plan (200 orbits, 1 draw; 1e-3 and 1e-2 s per orbit for WHFast

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 from dataclasses import asdict
 from typing import Any
 
@@ -30,6 +31,7 @@ from ..indicators.spock import spock_python
 from ..models import System
 from ..plots import megno_figure, orbits_figure
 from ..report import ACKNOWLEDGMENT, group_flags
+from ..sampling import E_MAX
 from . import figures
 from .state import (
     BUDGET_MAX,
@@ -39,9 +41,9 @@ from .state import (
     WhatIf,
     apply_changes,
     decode_state,
+    edited_rows,
     encode_state,
     input_hash,
-    planet_rows,
     share_url,
     table_edits,
 )
@@ -233,12 +235,8 @@ def _parameters(state: AppState, system: System) -> System:
         "Edit any value; leave ω empty to draw it at random. Published uncertainties are kept for the "
         "Monte Carlo draws. Every change is listed in the report."
     )
-    base_rows = planet_rows(system)
-    for r in base_rows:
-        for col, v in state.edits.get(r["planet"], {}).items():
-            r[col] = v
     edited = st.data_editor(
-        base_rows,
+        edited_rows(system, state.edits),
         key=f"table_{state.system}_{state.source}",
         hide_index=True,
         disabled=["planet", "mass_kind", "phase"],
@@ -247,47 +245,50 @@ def _parameters(state: AppState, system: System) -> System:
             "period_days": st.column_config.NumberColumn("P (days)", min_value=1e-3, format="%.6g"),
             "mass_earth": st.column_config.NumberColumn("Mass (M⊕)", min_value=1e-6, format="%.4g"),
             "mass_kind": st.column_config.TextColumn("Mass kind"),
-            "eccentricity": st.column_config.NumberColumn("e", min_value=0.0, max_value=0.95, format="%.4g"),
+            "eccentricity": st.column_config.NumberColumn("e", min_value=0.0, max_value=E_MAX, format="%.4g"),
             "omega_deg": st.column_config.NumberColumn("ω (deg)", format="%.4g"),
             "phase": st.column_config.TextColumn("Phase from"),
         },
     )
     state.edits = table_edits(system, list(edited))
+    rows = {r["planet"]: r for r in edited_rows(system, state.edits)}  # the table as it is now
     with st.expander("What if? Adjust one planet", expanded=state.whatif.is_active()):
         names = [p.name for p in system.planets]
         cur = state.whatif
         planet = st.selectbox("Planet", names, index=names.index(cur.planet) if cur.planet in names else 0)
-        p_rows = {r["planet"]: r for r in base_rows}
-        row = p_rows[planet]
+        row, mine = rows[planet], cur.planet == planet
         c1, c2, c3 = st.columns(3)
         factor = c1.select_slider(
             "Mass × factor",
             options=MASS_FACTORS,
-            value=cur.mass_factor if cur.planet == planet and cur.mass_factor in MASS_FACTORS else 1.0,
+            value=cur.mass_factor if mine and cur.mass_factor in MASS_FACTORS else 1.0,
         )
-        e_default = float(
-            cur.eccentricity
-            if cur.planet == planet and cur.eccentricity is not None
-            else (row["eccentricity"] or 0.0)
-        )
-        ecc = c2.slider("Eccentricity", 0.0, 0.9, min(e_default, 0.9), step=0.01)
-        k = names.index(planet)
-        ratio = None
-        if k > 0:
-            p_in = p_rows[names[k - 1]]["period_days"]
-            r_default = float(
-                cur.period_ratio
-                if cur.planet == planet and cur.period_ratio is not None
-                else row["period_days"] / p_in
-            )
-            ratio = c3.slider(
-                f"Period ratio to {names[k - 1]}", 1.01, 10.0, min(max(r_default, 1.01), 10.0), step=0.01
-            )
-            if abs(ratio - row["period_days"] / p_in) < 5e-3:
-                ratio = None
+        # A slider sets a what-if value only when it is moved (or the value came with the link): a table value
+        # outside the slider's range is shown at the end of the range, and is not changed by being shown.
+        e_table = float(row["eccentricity"] or 0.0)
+        e_set = cur.eccentricity if mine else None
+        e_shown = min(e_table if e_set is None else e_set, E_MAX)
+        ecc = c2.slider("Eccentricity", 0.0, E_MAX, e_shown, step=0.01)
+        if ecc != e_shown:
+            e_set = None if abs(ecc - e_table) < 5e-3 else ecc
+        # The inner neighbour comes from the edited periods, as in apply_changes.
+        ratio = cur.period_ratio if mine else None
+        if not all(r["period_days"] is not None and r["period_days"] > 0 for r in rows.values()):
+            c3.caption("A period ratio needs a positive period for every planet.")
         else:
-            c3.caption("The innermost planet has no inner neighbour.")
-        e_set = None if abs(ecc - (row["eccentricity"] or 0.0)) < 5e-3 else ecc
+            order = sorted(rows.values(), key=lambda r: float(r["period_days"]))
+            k = [r["planet"] for r in order].index(planet)
+            if k == 0:
+                c3.caption("The innermost planet has no inner neighbour.")
+                ratio = None
+            else:
+                r_table = row["period_days"] / order[k - 1]["period_days"]
+                r_shown = r_table if ratio is None else ratio
+                hi = float(max(10, math.ceil(1.2 * max(r_table, r_shown))))
+                r_shown = min(max(r_shown, 1.01), hi)
+                moved = c3.slider(f"Period ratio to {order[k - 1]['planet']}", 1.01, hi, r_shown, step=0.01)
+                if moved != r_shown:
+                    ratio = None if abs(moved - r_table) < 5e-3 else moved
         state.whatif = WhatIf(
             planet=planet, mass_factor=float(factor), eccentricity=e_set, period_ratio=ratio
         )
