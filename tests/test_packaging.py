@@ -60,6 +60,15 @@ def test_coverage_data_files_are_ignored() -> None:
 
 
 @pytest.mark.skipif(not WORKFLOWS.is_dir(), reason="workflows are not in the sdist")
+def test_documents_named_in_workflows_exist() -> None:
+    # The workflows point maintainers to setup instructions (RELEASING.md, DECISIONS.md, ...).
+    names = {
+        name for path in WORKFLOWS.glob("*.yml") for name in re.findall(r"\b[A-Z]+\.md\b", path.read_text())
+    }
+    assert names and [name for name in sorted(names) if not (ROOT / name).is_file()] == []
+
+
+@pytest.mark.skipif(not WORKFLOWS.is_dir(), reason="workflows are not in the sdist")
 def test_workflow_pipelines_keep_the_exit_status() -> None:
     # A step without `shell:` runs as `bash -e {0}`, without pipefail, so `cmd | tail` succeeds even when cmd
     # fails. `shell: bash` runs `bash --noprofile --norc -eo pipefail {0}`.

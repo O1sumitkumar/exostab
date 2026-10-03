@@ -64,7 +64,7 @@ exostab = "exostab.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/mimitoz62/exostab"
-Documentation = "https://github.com/mimitoz62/exostab#readme"
+Documentation = "https://mimitoz62.github.io/exostab/"
 Issues = "https://github.com/mimitoz62/exostab/issues"
 Changelog = "https://github.com/mimitoz62/exostab/blob/main/CHANGELOG.md"
 

@@ -60,6 +60,9 @@ that can affect them.
 
 ## Releases
 
-Maintainers bump `__version__` in `src/exostab/__init__.py`, move the "Unreleased" changelog entries under the
-new version, and push a tag `vX.Y.Z`. The release workflow builds the package, publishes it to PyPI with trusted
-publishing and creates the GitHub release (archived by Zenodo).
+Maintainers follow [RELEASING.md](RELEASING.md): set the version in `src/exostab/__init__.py` and
+`CITATION.cff` (with `date-released`), move the "Unreleased" changelog entries under the new version, and push a
+tag `vX.Y.Z`. The release workflow checks that these agree, builds the package, tests the built wheel, uploads
+it to PyPI with trusted publishing when the repository variable `PUBLISH_PYPI` is `true`, and creates the GitHub
+release (archived by Zenodo). RELEASING.md also covers the one-time setup of PyPI, Zenodo, Streamlit Community
+Cloud and the catalog's Zenodo dataset.
