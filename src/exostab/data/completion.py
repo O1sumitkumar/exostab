@@ -30,10 +30,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from html import unescape
 from typing import Any
+from urllib.parse import urljoin
 
 from ..models import CompletionFlag, MassKind, Phase, PhaseKind, Planet, Provenance, Star, Value
 from ..units import MEARTH_IN_MSUN, period_from_semimajor_axis, years_to_days
+from .archive import ARCHIVE_URL
 from .massradius import MassRadiusError, mass_from_radius
 
 Row = dict[str, Any]
@@ -48,12 +51,16 @@ _TAG = re.compile(r"<[^>]*>")
 
 
 def parse_reflink(html: str | None) -> tuple[str | None, str | None]:
-    """Split an archive ``*_reflink`` cell into (citation text, URL)."""
+    """Split an archive ``*_reflink`` cell into (citation text, URL).
+
+    HTML entities are decoded ("Fulton &amp; Petigura" -> "Fulton & Petigura"), and links relative to the
+    archive site (``/docs/pscp_calc.html`` for values the archive calculated) are made absolute.
+    """
     if not html:
         return None, None
     m = _HREF.search(html)
-    text = _TAG.sub("", html).strip() or None
-    return text, (m.group(1) if m else None)
+    text = unescape(_TAG.sub("", html)).strip() or None
+    return text, (urljoin(ARCHIVE_URL, unescape(m.group(1))) if m else None)
 
 
 def _value(row: Row, base: str, *, provenance: Provenance = Provenance.MEASURED) -> Value:

@@ -82,6 +82,26 @@ def test_parse_reflink() -> None:
     assert completion.parse_reflink("Plain text") == ("Plain text", None)
 
 
+def test_parse_reflink_unescapes_entities_and_resolves_relative_links() -> None:
+    # Archive cells carry HTML entities, and archive-calculated values link to a page relative to the
+    # archive site; report.json must hold plain text and links that work outside the archive.
+    text, url = completion.parse_reflink(
+        "<a refstr=X href=https://ui.adsabs.harvard.edu/abs/X/abstract target=ref>"
+        "Su&aacute;rez Mascare&ntilde;o et al. 2025</a>"
+    )
+    assert text == "Suárez Mascareño et al. 2025"
+    assert url == "https://ui.adsabs.harvard.edu/abs/X/abstract"
+    assert completion.parse_reflink("<a href=x>Fulton &amp; Petigura 2018</a>")[0] == "Fulton & Petigura 2018"
+    assert completion.parse_reflink("<a href=x>Kunovac Hod&#x17E;i&#x107; et al. 2021</a>")[0] == (
+        "Kunovac Hodžić et al. 2021"
+    )
+    calc = "<a refstr=CALCULATED_VALUE href=/docs/pscp_calc.html target=_blank>Calculated Value</a>"
+    assert completion.parse_reflink(calc) == (
+        "Calculated Value",
+        "https://exoplanetarchive.ipac.caltech.edu/docs/pscp_calc.html",
+    )
+
+
 def test_csv_roundtrip(tmp_path: Path) -> None:
     rows = pair()
     archive.write_csv(rows, tmp_path / "t.csv")
