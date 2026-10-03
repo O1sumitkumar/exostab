@@ -119,6 +119,18 @@ def test_epoch_given_or_absent() -> None:
     assert sampling.choose_epoch(s.model_copy(update={"epoch_jd": 5.0})) == 5.0
 
 
+def test_mean_longitudes_next_to_reference_times_need_an_epoch() -> None:
+    # Planet b's mean longitude has no stated epoch, so its phase relative to c's transit time is undefined.
+    s = two_planet_system()
+    c = s.planets[1].model_copy(update={"phase": Phase(kind=PhaseKind.TRANSIT, value=V(2460000.0, 0.001))})
+    mixed = s.model_copy(update={"planets": (s.planets[0], c)})
+    with pytest.raises(ValueError, match="epoch_jd"):
+        sampling.choose_epoch(mixed)
+    with pytest.raises(ValueError, match="epoch_jd"):
+        sampling.realizations(mixed, 0, seed=0)
+    assert sampling.choose_epoch(mixed.model_copy(update={"epoch_jd": 2460003.0})) == 2460003.0
+
+
 def test_random_phase_and_omega_are_uniform() -> None:
     s = two_planet_system(phases=None)
     p = s.planets[0].model_copy(update={"omega_deg": V(None, provenance=Provenance.RANDOMIZED)})

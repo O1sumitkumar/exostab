@@ -1,7 +1,8 @@
 # A made-up two-planet system showing every supported field. Units are part of the key names.
 # A value is either a number or {value, err} / {value, err_plus, err_minus} / {value, upper_limit: true}.
 name: Example two-planet system
-epoch_jd: 2460000.0            # epoch of mean anomalies / mean longitudes (optional)
+epoch_jd: 2460000.0            # epoch of mean anomalies / mean longitudes; required here because planet c
+                               # gives a transit time (optional only if no planet mixes the two)
 star:
   name: Example star
   mass_msun: {value: 1.00, err: 0.05}

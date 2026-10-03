@@ -132,10 +132,20 @@ def choose_epoch(system: System) -> float | None:
 
     If the system defines ``epoch_jd`` it is used. Otherwise, among the published reference times
     (transit or periastron), pick the one that minimises the summed variance of the propagated mean
-    longitudes. Returns None if no planet has a time-based phase.
+    longitudes. Returns None if no planet has a time-based phase. Mean anomalies and longitudes are
+    defined at the system epoch, so combining them with reference times without ``epoch_jd`` is an error:
+    their phase relative to the timed planets would depend on whichever reference time is picked.
     """
     if system.epoch_jd is not None:
         return system.epoch_jd
+    angles = [
+        p.name for p in system.planets if p.phase.kind in (PhaseKind.MEAN_ANOMALY, PhaseKind.MEAN_LONGITUDE)
+    ]
+    if angles and any(p.phase.kind in (PhaseKind.TRANSIT, PhaseKind.PERIASTRON) for p in system.planets):
+        raise ValueError(
+            f"{system.name}: epoch_jd is required when mean anomalies or longitudes ({', '.join(angles)}) are "
+            "combined with transit or periastron times"
+        )
     times = [
         p.phase.value.require()
         for p in system.planets

@@ -5,7 +5,8 @@ A value can be a number, or a mapping with ``value`` and optional ``err`` (symme
 See ``examples/two_planet.yaml`` for a complete example::
 
     name: My system
-    epoch_jd: 2460000.0            # optional; epoch of mean anomalies / mean longitudes
+    epoch_jd: 2460000.0            # epoch of mean anomalies / mean longitudes; required if other planets
+                                   # give transit or periastron times
     star:
       name: My star
       mass_msun: {value: 1.0, err: 0.05}
@@ -291,6 +292,18 @@ def load_system_file(path: str | Path) -> System:
     planets.sort(key=lambda q: q.period_days.require())
     flags.append(coplanar_flag())
     epoch = raw.get("epoch_jd")
+    kinds = {q.phase.kind for q in planets}
+    if (
+        epoch is None
+        and kinds & {PhaseKind.MEAN_ANOMALY, PhaseKind.MEAN_LONGITUDE}
+        and kinds & {PhaseKind.TRANSIT, PhaseKind.PERIASTRON}
+    ):
+        # The angles hold at an epoch the file does not state; taking them at one of the reference times would
+        # make the relative phases arbitrary.
+        raise SystemFileError(
+            f"{p}: epoch_jd is required when mean anomalies or mean longitudes are combined with transit or "
+            "periastron times: give the epoch at which the angles hold"
+        )
     return System(
         name=name,
         star=star,

@@ -48,6 +48,7 @@ def test_alternative_units_and_fields(tmp_path: Path) -> None:
         write(
             tmp_path,
             """
+epoch_jd: 2450010.0
 star: {mass_msun: {value: 1.0, err_plus: 0.1, err_minus: 0.05}}
 planets:
   - {name: b, semimajor_axis_au: {value: 0.1, err: 0.001}, radius_earth: 1.5, mean_anomaly_deg: 10, omega_deg: 5}
@@ -104,6 +105,31 @@ planets:
 def test_errors(tmp_path: Path, text: str, error: type[Exception], match: str) -> None:
     with pytest.raises(error, match=match):
         load_system_file(write(tmp_path, text))
+
+
+MIXED = """
+name: Mix
+star: {mass_msun: 1.0}
+planets:
+  - {name: Mix b, period_days: 10, mass_earth: 5, omega_deg: 0, mean_anomaly_deg: 10}
+  - {name: Mix c, period_days: 25, mass_earth: 8, transit_time_jd: 2459000.0}
+"""
+
+
+def test_mean_anomalies_next_to_reference_times_need_an_epoch(tmp_path: Path) -> None:
+    # A mean anomaly or longitude only means something at a stated epoch. Without epoch_jd it used to be taken
+    # at whichever transit or periastron time choose_epoch picked, an arbitrary relative phase.
+    with pytest.raises(SystemFileError, match="epoch_jd"):
+        load_system_file(write(tmp_path, MIXED))
+    with pytest.raises(SystemFileError, match="epoch_jd"):
+        load_system_file(write(tmp_path, MIXED.replace("mean_anomaly_deg", "mean_longitude_deg")))
+    s = load_system_file(write(tmp_path, "epoch_jd: 2459003.0\n" + MIXED))
+    assert s.epoch_jd == 2459003.0
+    # angles alone share a common, unspecified epoch, and reference times alone need none
+    load_system_file(write(tmp_path, MIXED.replace("transit_time_jd: 2459000.0", "mean_longitude_deg: 90")))
+    load_system_file(
+        write(tmp_path, MIXED.replace("omega_deg: 0, mean_anomaly_deg: 10", "transit_time_jd: 2459001"))
+    )
 
 
 def test_missing_file() -> None:
