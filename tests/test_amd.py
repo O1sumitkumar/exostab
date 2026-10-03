@@ -124,11 +124,16 @@ def test_classification_cases() -> None:
     assert amd.classify(ecc_pair) is Verdict.UNSTABLE
     # AMD-unstable (resonance-overlap branch) but Hill stable: the Hill criterion is stricter than the
     # collision criterion (Petit et al. 2018), so this only happens where C_MMR < C_H
-    mid = real_of([1e-3, 1e-3], [1.0, 1.6], [0.05, 0.0])
+    mid = real_of([1e-3, 1e-3], [1.0, 1.6], [0.035, 0.0])
     info = amd.analyse(mid)["pairs"][0]
     assert info["critical_branch"] == "mmr_overlap"
     assert info["beta"] > 1 > info["beta_hill"]
     assert amd.classify(mid) is Verdict.MARGINAL
+    # neither criterion holds with C = 2 C_p, but the coplanar pair is Hill stable: not "unstable"
+    hot = real_of([1e-3, 1e-3], [1.0, 1.6], [0.05, 0.0])
+    info = amd.analyse(hot)["pairs"][0]
+    assert info["beta"] > 1 and info["beta_hill"] > 1 > info["beta_hill_coplanar"]
+    assert amd.classify(hot) is Verdict.MARGINAL
     # weakly AMD-stable: a light inner planet next to an eccentric giant
     weak = real_of([1e-8, 1e-3], [1.0, 8.0], [0.0, 0.15])
     w = amd.analyse(weak)
@@ -138,15 +143,40 @@ def test_classification_cases() -> None:
     assert amd.classify(three) is Verdict.MARGINAL
 
 
+def test_equipartition_convention_of_laskar_petit_2017() -> None:
+    """beta = 2 beta_p and beta_S = 2 beta_Sp (Laskar & Petit 2017, Sect. 6; Petit et al. 2017, Sect. 5)."""
+    ms, ps, es = [3e-5, 3e-5], [1.0, 2.2], [0.2, 0.2]
+    r = real_of(ms, ps, es)
+    info = amd.analyse(r)
+    p = info["pairs"][0]
+    # the coplanar AMD C_p, computed independently: Lambda_k / sqrt(G M_*) = m_k sqrt(a_k)
+    a = r.semi_major_axes()
+    lam = [m * math.sqrt(float(ak)) for m, ak in zip(ms, a)]
+    c_p = sum(lk * (1 - math.sqrt(1 - e**2)) for lk, e in zip(lam, es))
+    assert p["relative_amd"] == pytest.approx(c_p / lam[1])
+    assert p["beta_coplanar"] == pytest.approx(c_p / lam[1] / p["critical_amd"])
+    assert p["beta"] == pytest.approx(2 * p["beta_coplanar"])
+    assert p["beta_hill"] == pytest.approx(2 * p["beta_hill_coplanar"])
+    assert info["beta_star_coplanar"] == pytest.approx(c_p / lam[0])
+    assert info["beta_star"] == pytest.approx(2 * c_p / lam[0])
+    # AMD-stable for exactly coplanar orbits (beta_p = 0.61), but not with the AMD of the inclinations
+    assert p["beta_coplanar"] < 1 <= p["beta"]
+    assert amd.classify(r) is Verdict.MARGINAL
+    res = amd.evaluate(r, [])
+    assert any("largest β_p = 0.611" in n for n in res.notes)
+
+
 def test_evaluate_texts() -> None:
     r = amd.evaluate(real_of([3e-5, 3e-5], [1.0, 2.2], [0.0, 0.01]), [])
     assert r.verdict is Verdict.STABLE and r.summary.startswith("AMD-stable")
     r = amd.evaluate(real_of([1e-8, 1e-3], [1.0, 8.0], [0.0, 0.15]), [])
     assert r.summary.startswith("Weakly")
-    r = amd.evaluate(real_of([1e-3, 1e-3], [1.0, 1.6], [0.05, 0.0]), [])
+    r = amd.evaluate(real_of([1e-3, 1e-3], [1.0, 1.6], [0.035, 0.0]), [])
     assert "Hill stable in the AMD framework" in r.summary
+    r = amd.evaluate(real_of([1e-3, 1e-3], [1.0, 1.6], [0.05, 0.0]), [])
+    assert r.verdict is Verdict.MARGINAL and "not 'unstable'" in r.summary and "β_H,p = 0.844" in r.summary
     r = amd.evaluate(real_of([3e-5, 3e-5], [1.0, 2.2], [0.5, 0.5]), [])
-    assert r.summary.startswith("Neither")
+    assert r.summary.startswith("Neither") and "even for exactly coplanar orbits" in r.summary
     r = amd.evaluate(
         real_of([3e-5] * 3, [1.0, 1.1, 4.0], [0.4, 0.4, 0.4]),
         [real_of([3e-5] * 3, [1.0, 2.0, 4.0], [0.0] * 3)],
