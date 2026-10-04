@@ -28,6 +28,7 @@ from exostab.models import MassKind, PhaseKind, Provenance
 INFO = TableInfo(kind="archive", retrieved_utc="2026-09-28T00:00:00+00:00", path=None)
 REF_A = "<a refstr=A href=https://ui.adsabs.harvard.edu/abs/A/abstract target=ref>Alpha et al. 2020</a>"
 REF_B = "<a refstr=B href=https://ui.adsabs.harvard.edu/abs/B/abstract target=ref>Beta et al. 2021</a>"
+REF_C = "<a refstr=C href=https://ui.adsabs.harvard.edu/abs/C/abstract target=ref>Gamma et al. 2022</a>"
 
 
 def row(name: str = "Host b", host: str = "Host", **kw: Any) -> dict[str, Any]:
@@ -330,8 +331,8 @@ def _kepler114_like() -> list[dict[str, Any]]:
     xie = {"st_mass": 0.56, "st_masserr1": 0.06, "st_masserr2": -0.06, "st_mass_reflink": REF_B}
     return [
         row("Host b", pl_orbper=5.2, **morton),
-        row("Host c", pl_orbper=8.0, **xie),
-        row("Host d", pl_orbper=11.8, **xie),
+        row("Host c", pl_orbper=8.0, pl_bmasse_reflink=REF_B, **xie),
+        row("Host d", pl_orbper=11.8, pl_bmasse_reflink=REF_B, **xie),
     ]
 
 
@@ -360,6 +361,48 @@ def test_stellar_mass_is_the_median_of_the_rows_whatever_their_order() -> None:
     assert s.star.mass_msun.value == 0.8
     # `exostab list` shows the same stellar mass
     assert list_systems(rows)[0].star_mass_msun == 0.56
+
+
+def test_stellar_mass_of_the_publication_of_the_measured_masses() -> None:
+    """Kepler-968: the only measured mass (TTV, Jontof-Hutter et al. 2021, M* = 0.681) was divided by the median
+    0.76 of the two rows whose masses come from the mass-radius relation (Morton et al. 2016)."""
+    estimated = {"pl_bmassprov": "M-R relationship", "st_mass": 0.76, "st_mass_reflink": REF_A}
+    rows = [
+        row("Host b", pl_orbper=5.7, **estimated),
+        row("Host c", pl_orbper=8.0, **estimated),
+        row("Host d", pl_orbper=12.0, pl_bmasse_reflink=REF_B, st_mass=0.681, st_mass_reflink=REF_B),
+    ]
+    for k in range(len(rows)):
+        s = system_from_rows(rows[k:] + rows[:k], INFO)
+        assert s.star.mass_msun.value == 0.681 and s.star.mass_msun.reference == "Beta et al. 2021"
+        flag = next(f for f in s.flags if f.rule == "star_mass_inconsistent")
+        assert "the publication of the measured masses of Host d" in flag.message
+        assert "0.76" in flag.message and "median" not in flag.message
+    assert list_systems(rows)[0].star_mass_msun == 0.681
+    # a tie (HD 116029: one mass from each publication): the median rule, lower middle value
+    tie = [
+        row("Host b", pl_bmasse_reflink=REF_B, st_mass=0.83, st_mass_reflink=REF_B),
+        row("Host c", pl_orbper=25.0, st_mass=1.33),
+    ]
+    s = system_from_rows(tie, INFO)
+    assert s.star.mass_msun.value == 0.83
+    assert any("the median of the rows (the lower of the two middle values" in f.message for f in s.flags)
+    assert system_from_rows(tie[::-1], INFO).star.mass_msun.value == 0.83
+    # the publication of most masses gives no stellar mass of its own in the table: the median rule
+    other = [
+        row("Host b", pl_bmasse_reflink=REF_B, st_mass=1.1),
+        row("Host c", pl_orbper=25.0, pl_bmasse_reflink=REF_B, st_mass=0.9),
+        row("Host d", pl_orbper=60.0, st_mass=1.0),
+    ]
+    assert system_from_rows(other, INFO).star.mass_msun.value == 1.0
+    # AU Mic: two of four masses from one publication, one each from two others: that publication's value
+    au_mic = [
+        row("Host b", st_mass=0.635),
+        row("Host c", pl_orbper=18.9, st_mass=0.635),
+        row("Host d", pl_orbper=12.7, pl_bmasse_reflink=REF_B, st_mass=0.51, st_mass_reflink=REF_B),
+        row("Host e", pl_orbper=33.4, pl_bmasse_reflink=REF_C, st_mass=0.6, st_mass_reflink=REF_C),
+    ]
+    assert system_from_rows(au_mic, INFO).star.mass_msun.value == 0.635
 
 
 def test_controversial_flag() -> None:

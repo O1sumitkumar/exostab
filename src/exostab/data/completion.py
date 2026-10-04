@@ -5,9 +5,11 @@ report and stored in the JSON output. The rules (DECISIONS.md, D11):
 
 Stellar mass
     The planet rows of one host can give different stellar masses (the composite table picks them per
-    planet). The median of the rows is used, for an even number of rows the lower middle value, and the
-    disagreement is flagged with every value and its reference. Limits on the stellar mass are not used;
-    a system with only a limit is rejected.
+    planet). If one publication gives more of the measured planet masses than any other and a row gives
+    that publication's stellar mass, that value is used, so that those planet-to-star mass ratios are the
+    published ones; otherwise the median of the rows, for an even number of rows the lower middle value.
+    The disagreement is flagged with every value and its reference. Limits on the stellar mass are not
+    used; a system with only a limit is rejected.
 Period
     Published period used when present. Otherwise derived from the semi-major axis with Kepler's third
     law ("derived"), except for planets found by microlensing or direct imaging, whose ``pl_orbsmax`` can
@@ -106,22 +108,52 @@ def _star_mass_rows(rows: Sequence[Row]) -> list[Row]:
     return [r for r in rows if r.get("st_mass") is not None and r.get("st_masslim") not in (1, -1)]
 
 
+def _measured_mass_rows(rows: Sequence[Row]) -> list[Row]:
+    """Rows with a measured planet mass (RV, TTV or astrometry; not estimated from the radius), which scales
+    with the stellar mass the publication assumed."""
+    return [r for r in rows if r.get("pl_bmasse") is not None and mass_kind(r) is not MassKind.ESTIMATED]
+
+
+def _mass_publication(rows: Sequence[Row]) -> str | None:
+    """The publication of more measured planet masses than any other, or None (no measured mass, or a tie)."""
+    counts = Counter(parse_reflink(r.get("pl_bmasse_reflink"))[0] for r in _measured_mass_rows(rows))
+    counts.pop(None, None)
+    top = counts.most_common(2)
+    if not top or (len(top) == 2 and top[1][1] == top[0][1]):
+        return None
+    return top[0][0]
+
+
+def _star_mass_pool(rows: Sequence[Row]) -> tuple[list[Row], str | None]:
+    """The rows among which the stellar mass is chosen, and the publication that decided it (or None)."""
+    usable = _star_mass_rows(rows)
+    paper = _mass_publication(rows)
+    if paper is not None:
+        same = [r for r in usable if parse_reflink(r.get("st_mass_reflink"))[0] == paper]
+        if same:
+            return same, paper
+    return usable, None
+
+
 def star_mass_row(rows: Sequence[Row]) -> Row | None:
     """The planet row whose stellar mass is used for the whole system, or None if no row has one.
 
     The composite table picks the stellar parameters separately for each planet row, so the rows of one
-    host can give different stellar masses, and the archive returns the rows in no particular order. The
-    rule is the median of the rows' values, for an even number of rows the lower of the two middle values
-    (a smaller star gives larger planet-to-star mass ratios, the less stable choice). Among rows with that
-    value, the most common (errors, reference) wins, then the first in sort order, so the result never
-    depends on the row order. Limits on the stellar mass are not values and are not used.
+    host can give different stellar masses, and the archive returns the rows in no particular order. A
+    measured planet mass scales with the stellar mass its publication assumed (m sin i as M_*^(2/3) from
+    radial velocities, m as M_* from transit-timing mass ratios), so if one publication gives more of the
+    measured masses than any other and a row gives that publication's stellar mass, that value is used.
+    Otherwise the rule is the median of the rows' values, for an even number of rows the lower of the two
+    middle values (a smaller star gives larger planet-to-star mass ratios, the less stable choice). Among
+    rows with the chosen value, the most common (errors, reference) wins, then the first in sort order, so
+    the result never depends on the row order. Limits on the stellar mass are not values and are not used.
     """
-    usable = _star_mass_rows(rows)
-    if not usable:
+    pool, _ = _star_mass_pool(rows)
+    if not pool:
         return None
-    values = sorted(float(r["st_mass"]) for r in usable)
+    values = sorted(float(r["st_mass"]) for r in pool)
     median = values[(len(values) - 1) // 2]
-    same = [r for r in usable if r["st_mass"] == median]
+    same = [r for r in pool if r["st_mass"] == median]
     counts = Counter(_star_mass_key(r) for r in same)
     return min(same, key=lambda r: (-counts[_star_mass_key(r)], _star_mass_key(r)))
 
@@ -147,16 +179,28 @@ def _star_mass_flag(rows: Sequence[Row], chosen: Row) -> CompletionFlag | None:
         f"{_star_mass_entry(rs[0])} ({', '.join(sorted(str(r['pl_name']) for r in rs))})"
         for _, rs in sorted(groups.items())
     ]
-    values = sorted(float(r["st_mass"]) for r in usable)
+    pool, paper = _star_mass_pool(rows)
+    values = sorted(float(r["st_mass"]) for r in pool)
     split = values[(len(values) - 1) // 2] != values[len(values) // 2]  # even count, two middle values differ
     even = " (the lower of the two middle values, the less stable choice)" if split else ""
+    if paper is not None:
+        planets = sorted(
+            str(r["pl_name"])
+            for r in _measured_mass_rows(rows)
+            if parse_reflink(r.get("pl_bmasse_reflink"))[0] == paper
+        )
+        why = f"the stellar mass of the publication of the measured masses of {', '.join(planets)}" + (
+            f", the median of its rows{even}" if len(set(values)) > 1 else ""
+        )
+    else:
+        why = f"the median of the rows{even}"
     return _flag(
         None,
         "st_mass",
         "star_mass_inconsistent",
         f"The planet rows give different stellar masses in solar masses: {'; '.join(entries)}. Used: "
-        f"{_star_mass_entry(chosen)}, the median of the rows{even}. Planet masses derived with another "
-        "stellar mass are not rescaled.",
+        f"{_star_mass_entry(chosen)}, {why}. Planet masses derived with another stellar mass are not "
+        "rescaled.",
     )
 
 
