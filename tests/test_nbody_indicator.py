@@ -7,6 +7,8 @@ import pytest
 
 from conftest import V, two_planet_system
 from exostab.analysis import CheckSettings, check_system, overall_verdict, upper_limit_inputs
+from exostab.data import archive, system_from_rows
+from exostab.data.store import TableInfo
 from exostab.indicators import AGREEMENT, DrawStats, IndicatorResult, Verdict, combine
 from exostab.indicators import megno as nb
 from exostab.integrate import RunResult
@@ -206,6 +208,56 @@ def test_check_system_with_upper_limit_masses_is_never_unstable() -> None:
     assert res.report.indicators["nbody"].verdict is U
     assert res.report.overall.verdict is M
     assert "masses of Test b and Test c" in res.report.overall.summary
+
+
+def hd215152_rows(mass_limit: int) -> list[dict[str, object]]:
+    """HD 215152 b-e as in the archive cache of 2026-09-28: Delisle et al. (2018) orbits, Kiefer et al. (2021)
+    astrometric mass upper limits (Earth masses, ``pl_bmasselim = 1``) about 300 times the m sin i."""
+    rows: list[dict[str, object]] = []
+    for letter, period_days, err_plus, err_minus, mass_earth in (
+        ("b", 5.75999, 0.00157, -0.00175, 565.42),
+        ("c", 7.28243, 0.00451, -0.00827, 468.80),
+        ("d", 10.86499, 0.00564, -0.00613, 770.42),
+        ("e", 25.1967, 0.0476, -0.0505, 975.42),
+    ):
+        r: dict[str, object] = dict.fromkeys(archive.COLUMN_NAMES)
+        r.update(
+            pl_name=f"HD 215152 {letter}",
+            hostname="HD 215152",
+            pl_letter=letter,
+            sy_pnum=4,
+            sy_snum=1,
+            cb_flag=0,
+            tran_flag=0,
+            pl_orbper=period_days,
+            pl_orbpererr1=err_plus,
+            pl_orbpererr2=err_minus,
+            pl_orbperlim=0,
+            pl_orbeccen=0.0,
+            pl_orbeccenlim=0,
+            pl_bmasse=mass_earth,
+            pl_bmasselim=mass_limit,
+            pl_bmassprov="Mass",
+            st_mass=0.77,
+            st_masserr1=0.015,
+            st_masserr2=-0.015,
+            st_masslim=0,
+        )
+        rows.append(r)
+    return rows
+
+
+def test_hd215152_with_upper_limit_masses_is_not_overall_unstable() -> None:
+    """The reported case: exostab called HD 215152 "unstable" with its masses set to the upper limits."""
+    info = TableInfo(kind="archive-cache", retrieved_utc="2026-09-28T14:30:00+00:00", path=None)
+    settings = CheckSettings(orbits=300, draws=3, seed=0, jobs=1, n_samples=5, ias15_check=False)
+    res = check_system(system_from_rows(hd215152_rows(mass_limit=1), info), settings)
+    assert res.report.indicators["nbody"].verdict is U  # every run with masses at or below the limits
+    assert res.report.overall.verdict is M
+    assert "masses of HD 215152 b, HD 215152 c, HD 215152 d and HD 215152 e" in res.report.overall.summary
+    # The same masses published as measurements would be direct evidence of instability.
+    res = check_system(system_from_rows(hd215152_rows(mass_limit=0), info), settings)
+    assert res.report.overall.verdict is U
 
 
 def test_no_draws_never_give_a_confident_overall_verdict() -> None:
