@@ -183,10 +183,8 @@ def test_app_runs_headless() -> None:
     assert "Overall:" in text
     assert len(at.get("download_button")) == 3
     assert any("orbits=300" in c.value for c in at.code)
-    # the documentation link must resolve: it points to the docs folder of the repository
-    assert any(
-        "[documentation](https://github.com/mimitoz62/exostab/tree/main/docs)" in c.value for c in at.caption
-    )
+    # the documentation link points to the documentation site, as do the other docs links
+    assert any("[documentation](https://mimitoz62.github.io/exostab/)" in c.value for c in at.caption)
     # an unknown system gives a clear error instead of a crash
     at2 = AppTest.from_file(APP, default_timeout=60)
     at2.query_params.update({"system": "Nonexistent-99", "source": "snapshot"})

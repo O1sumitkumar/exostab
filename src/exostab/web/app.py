@@ -49,8 +49,7 @@ from .state import (
 )
 
 REPO = "https://github.com/mimitoz62/exostab"
-# The docs as Markdown on GitHub: the documentation site (docs.yml) is not deployed yet, and its URL gives 404.
-DOCS = f"{REPO}/tree/main/docs"
+DOCS = "https://mimitoz62.github.io/exostab/"  # the documentation site (docs.yml)
 BADGE = {
     Verdict.STABLE: "green",
     Verdict.MARGINAL: "orange",
