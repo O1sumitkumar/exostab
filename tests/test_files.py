@@ -136,6 +136,31 @@ def test_errors(tmp_path: Path, text: str, error: type[Exception], match: str) -
         load_system_file(write(tmp_path, text))
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        ("mass_earth: 5", "mass_earth: 5, omega_deg: .nan"),
+        ("mass_earth: 5", "mass_earth: 5, mean_longitude_deg: .nan"),
+        ("mass_earth: 5", "mass_earth: 5, transit_time_jd: .nan"),
+        ("mass_earth: 5", "mass_earth: .inf"),
+        ("mass_earth: 5", "mass_jupiter: 1.0e+308"),  # finite in the file, infinite in Earth masses
+        ("period_days: 10", "period_days: .inf"),
+        ("period_days: 10", "period_days: {value: 10, err: .nan}"),
+        ("period_days: 10", "semimajor_axis_au: -.inf"),
+        ("mass_msun: 1.0", "mass_msun: .nan"),
+        ("name: T\n", "name: T\nepoch_jd: .nan\n"),
+    ],
+)
+def test_non_finite_numbers_are_refused(tmp_path: Path, change: tuple[str, str]) -> None:
+    # YAML reads .nan and .inf as floats (and yaml.dump writes a missing float as .nan). A NaN angle, time or
+    # epoch stopped every run at once, reported as a close encounter: an "unstable" verdict from invalid input.
+    # Infinite masses or periods ended in tracebacks from the indicators.
+    text = GOOD.replace(*change)
+    assert text != GOOD
+    with pytest.raises(SystemFileError, match="finite"):
+        load_system_file(write(tmp_path, text))
+
+
 MIXED = """
 name: Mix
 star: {mass_msun: 1.0}

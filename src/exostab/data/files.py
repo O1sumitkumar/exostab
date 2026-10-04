@@ -26,6 +26,7 @@ Missing values follow the same completion rules as archive data (:mod:`exostab.d
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -89,13 +90,21 @@ _PHASE_KEYS = {
 }
 
 
+def _finite(x: float, where: str) -> float:
+    """``x`` if it is a finite number. YAML reads ``.nan`` and ``.inf`` as floats, and a NaN angle or time used
+    to stop every integration at once, which was reported as a close encounter."""
+    if not math.isfinite(x):
+        raise SystemFileError(f"{where}: expected a finite number, got {x!r}")
+    return x
+
+
 def _value(
     raw: Any, *, scale: float = 1.0, reference: str | None = None, where: str = "", allow_limit: bool = False
 ) -> Value:
     if isinstance(raw, bool) or raw is None:
         raise SystemFileError(f"{where}: expected a number or a mapping, got {raw!r}")
     if isinstance(raw, (int, float)):
-        return Value(value=float(raw) * scale, reference=reference)
+        return Value(value=_finite(float(raw) * scale, where), reference=reference)
     if not isinstance(raw, dict):
         raise SystemFileError(f"{where}: expected a number or a mapping, got {raw!r}")
     unknown = set(raw) - VALUE_KEYS
@@ -114,12 +123,14 @@ def _value(
     err_m = raw.get("err_minus", raw.get("err"))
     try:
         return Value(
-            value=float(raw["value"]) * scale,
-            err_plus=None if err_p is None else abs(float(err_p)) * scale,
-            err_minus=None if err_m is None else abs(float(err_m)) * scale,
+            value=_finite(float(raw["value"]) * scale, where),
+            err_plus=None if err_p is None else _finite(abs(float(err_p)) * scale, f"{where} error"),
+            err_minus=None if err_m is None else _finite(abs(float(err_m)) * scale, f"{where} error"),
             provenance=Provenance.UPPER_LIMIT if limit else Provenance.MEASURED,
             reference=raw.get("reference", reference),
         )
+    except SystemFileError:
+        raise
     except (TypeError, ValueError) as exc:
         raise SystemFileError(f"{where}: {exc}") from exc
 
@@ -394,8 +405,12 @@ def load_system_file(path: str | Path) -> System:
         if isinstance(epoch, bool):  # YAML reads "yes"/"no" as booleans, which float() would accept
             raise TypeError
         epoch_jd = None if epoch is None else float(epoch)
+        if epoch_jd is not None and not math.isfinite(epoch_jd):
+            raise ValueError
     except (TypeError, ValueError) as exc:
-        raise SystemFileError(f"{p}: epoch_jd must be a Julian date (a number), got {epoch!r}") from exc
+        raise SystemFileError(
+            f"{p}: epoch_jd must be a Julian date (a finite number), got {epoch!r}"
+        ) from exc
     try:
         return System(
             name=name,
