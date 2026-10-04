@@ -81,6 +81,7 @@ include = [
     "examples",
     "scripts",  # tests/test_scripts.py loads them
     "streamlit_app.py",  # tests/test_web.py runs it
+    "docs/cli.md",  # tests/test_report_cli.py compares the help text with it
     "README.md",
     "LICENSE",
     "CITATION.cff",

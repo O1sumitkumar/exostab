@@ -43,7 +43,7 @@ def pyproject() -> dict[str, Any]:
 def test_sdist_ships_what_the_tests_load() -> None:
     # The sdist contains tests/, so packagers run them from it; these are the project files the tests read.
     include = pyproject()["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
-    needed = ["src/exostab", "tests", "examples", "scripts", "streamlit_app.py"]
+    needed = ["src/exostab", "tests", "examples", "scripts", "streamlit_app.py", "docs/cli.md"]
     assert [path for path in needed if path not in include] == []
 
 
