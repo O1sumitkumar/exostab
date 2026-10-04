@@ -35,7 +35,10 @@ from .models import Provenance, System, Value
 from .sampling import E_MAX, SIN_I_MIN, Realization
 from .units import MEARTH_IN_MSUN, format_count, format_years, years_to_days
 
-SCHEMA_VERSION = "1.2"  # 1.1: settings.budget_s; 1.2: settings.spock and the optional "spock" indicator
+# 1.1: settings.budget_s; 1.2: settings.spock and the optional "spock" indicator; 1.3: infinite numbers written
+# as "inf" / "-inf" instead of null, new completion flags, new keys in the indicator details, and overall
+# summaries built from the draw counts
+SCHEMA_VERSION = "1.3"
 
 ACKNOWLEDGMENT = (
     "This research has made use of the NASA Exoplanet Archive, which is operated by the California "

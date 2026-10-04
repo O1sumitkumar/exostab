@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - The IAS15 check starts first, so long checks finish sooner.
+- `report.json` writes infinite numbers as "inf" / "-inf" instead of null, and carries new completion
+  flags, new keys in the indicator details and overall summaries built from the draw counts (report
+  schema 1.3).
 - Close encounters are detected for each pair of planets (closer than the mean of their Hill radii) with
   REBOUND collision detection, instead of one global distance set by the smallest planet (DECISIONS.md, D20).
 
