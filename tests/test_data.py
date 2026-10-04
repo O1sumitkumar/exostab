@@ -82,6 +82,26 @@ def test_parse_reflink() -> None:
     assert completion.parse_reflink("Plain text") == ("Plain text", None)
 
 
+def test_parse_reflink_unescapes_entities_and_resolves_relative_links() -> None:
+    # Archive cells carry HTML entities, and archive-calculated values link to a page relative to the
+    # archive site; report.json must hold plain text and links that work outside the archive.
+    text, url = completion.parse_reflink(
+        "<a refstr=X href=https://ui.adsabs.harvard.edu/abs/X/abstract target=ref>"
+        "Su&aacute;rez Mascare&ntilde;o et al. 2025</a>"
+    )
+    assert text == "Suárez Mascareño et al. 2025"
+    assert url == "https://ui.adsabs.harvard.edu/abs/X/abstract"
+    assert completion.parse_reflink("<a href=x>Fulton &amp; Petigura 2018</a>")[0] == "Fulton & Petigura 2018"
+    assert completion.parse_reflink("<a href=x>Kunovac Hod&#x17E;i&#x107; et al. 2021</a>")[0] == (
+        "Kunovac Hodžić et al. 2021"
+    )
+    calc = "<a refstr=CALCULATED_VALUE href=/docs/pscp_calc.html target=_blank>Calculated Value</a>"
+    assert completion.parse_reflink(calc) == (
+        "Calculated Value",
+        "https://exoplanetarchive.ipac.caltech.edu/docs/pscp_calc.html",
+    )
+
+
 def test_csv_roundtrip(tmp_path: Path) -> None:
     rows = pair()
     archive.write_csv(rows, tmp_path / "t.csv")
@@ -168,6 +188,30 @@ def test_missing_eccentricity_and_omega() -> None:
     assert {"eccentricity_assumed_zero", "omega_randomized"} <= {f.rule for f in s.flags}
 
 
+def test_published_zero_eccentricity_without_errors_is_an_assumption() -> None:
+    # e = 0 with no uncertainty is a circular orbit fixed in the source's fit (e.g. the DR25 KOI table),
+    # not a measurement: it must be labelled and flagged like exostab's own e = 0 assumption.
+    fixed = {
+        "pl_orbeccen": 0.0,
+        "pl_orbeccenerr1": None,
+        "pl_orbeccenerr2": None,
+        "pl_orbeccen_reflink": REF_B,
+    }
+    s = system_from_rows(pair(**fixed), INFO)
+    c = s.planets[1]
+    assert c.eccentricity.value == 0.0 and c.eccentricity.provenance is Provenance.ASSUMED
+    assert c.eccentricity.reference == "Beta et al. 2021"
+    flag = next(f for f in s.flags if f.rule == "eccentricity_fixed_zero_by_source")
+    assert flag.planet == "Host c" and "Beta et al. 2021" in flag.message
+    # zero error bars are no uncertainty either
+    s = system_from_rows(pair(**{**fixed, "pl_orbeccenerr1": 0.0, "pl_orbeccenerr2": 0.0}), INFO)
+    assert s.planets[1].eccentricity.provenance is Provenance.ASSUMED
+    # a zero eccentricity with an error bar is a measurement
+    s = system_from_rows(pair(pl_orbeccen=0.0, pl_orbeccenerr1=0.05, pl_orbeccenerr2=0.0), INFO)
+    assert s.planets[1].eccentricity.provenance is Provenance.MEASURED
+    assert "eccentricity_fixed_zero_by_source" not in {f.rule for f in s.flags}
+
+
 def test_limits() -> None:
     s = system_from_rows(pair(pl_orbeccenlim=1, pl_bmasselim=1), INFO)
     c = s.planets[1]
@@ -180,6 +224,12 @@ def test_limits() -> None:
 def test_bad_eccentricity_rejected() -> None:
     with pytest.raises(IncompleteSystemError, match="outside"):
         system_from_rows(pair(pl_orbeccen=1.2), INFO)
+    # above the 0.95 cap the runs would silently use 0.95 while the report showed the published value
+    with pytest.raises(IncompleteSystemError, match=r"above 0\.95"):
+        system_from_rows(pair(pl_orbeccen=0.97), INFO)
+    with pytest.raises(IncompleteSystemError, match=r"above 0\.95"):
+        system_from_rows(pair(pl_orbeccen=0.97, pl_orbeccenlim=1), INFO)
+    assert system_from_rows(pair(pl_orbeccen=0.95), INFO).planets[1].eccentricity.value == 0.95
 
 
 @pytest.mark.parametrize(
@@ -196,6 +246,25 @@ def test_mass_provenance(prov: str, kind: MassKind, rule: str | None) -> None:
     assert s.planets[1].mass_kind is kind
     if rule:
         assert rule in {f.rule for f in s.flags}
+
+
+def test_mass_kind_uses_transit_and_limit_flags() -> None:
+    # A transiting planet has i close to 90 deg, so its archive "Msini" is its mass (Kepler-9 d:
+    # i = 89.38 deg); it must not be called a minimum mass or be scaled by the inclination prior while its
+    # siblings are not.
+    s = system_from_rows(pair(pl_bmassprov="Msini", tran_flag=1, pl_orbincl=89.38), INFO)
+    assert s.planets[1].mass_kind is MassKind.TRUE
+    c_flags = {f.rule: f.message for f in s.flags if f.planet == "Host c"}
+    assert "minimum_mass" not in c_flags and "89.38" in c_flags["msini_of_transiting_planet"]
+    # A lower limit on the mass of a non-transiting planet is an m sin i with unknown inclination
+    # (HD 219134 d and f); it is a minimum mass for the inclination prior, like its "Msini" siblings.
+    s = system_from_rows(pair(pl_bmasselim=-1), INFO)
+    assert s.planets[1].mass_kind is MassKind.MINIMUM
+    assert any(f.rule == "mass_lower_limit" and "minimum mass" in f.message for f in s.flags)
+    assert system_from_rows(pair(pl_bmasselim=-1, tran_flag=1), INFO).planets[1].mass_kind is MassKind.TRUE
+    # `exostab list` counts minimum masses by the same rule
+    rows = [row("Host b", pl_bmasselim=-1), row("Host c", pl_orbper=25.0, pl_bmassprov="Msini", tran_flag=1)]
+    assert list_systems(rows)[0].minimum_masses == 1
 
 
 def test_mass_from_radius_and_failures() -> None:
@@ -220,17 +289,77 @@ def test_period_from_semimajor_axis() -> None:
         system_from_rows(pair(pl_orbper=None, pl_orbsmax=None), INFO)
 
 
+@pytest.mark.parametrize("method", ["Microlensing", "Imaging"])
+def test_no_period_from_a_projected_separation(method: str) -> None:
+    # For microlensing and directly imaged planets the archive's pl_orbsmax can be the projected separation
+    # on the sky, which gives neither the orbit nor the spacing of the planets.
+    with pytest.raises(IncompleteSystemError, match="projected separation"):
+        system_from_rows(pair(pl_orbper=None, pl_orbsmax=2.77, discoverymethod=method), INFO)
+    # with a published period the planet is placed as usual
+    s = system_from_rows(pair(pl_orbsmax=2.77, discoverymethod=method), INFO)
+    assert s.planets[1].period_days.provenance is Provenance.MEASURED
+
+
 def test_star_rules() -> None:
     with pytest.raises(IncompleteSystemError, match="circumbinary"):
         system_from_rows(pair(cb_flag=1), INFO)
-    rows = pair()
-    rows[0]["st_mass"] = None
     with pytest.raises(IncompleteSystemError, match="stellar mass"):
-        system_from_rows(rows, INFO)
-    rows = [row("Host b", sy_snum=2, st_masslim=1), row("Host c", pl_orbper=25.0)]
-    assert {"companion_stars_ignored", "star_mass_upper_limit"} <= rules(rows)
+        system_from_rows([row("Host b", st_mass=None), row("Host c", pl_orbper=25.0, st_mass=None)], INFO)
+    assert "companion_stars_ignored" in rules([row("Host b", sy_snum=2), row("Host c", pl_orbper=25.0)])
     with pytest.raises(IncompleteSystemError, match="only one planet"):
         system_from_rows([row("Host b")], INFO)
+
+
+@pytest.mark.parametrize("lim", [1, -1])
+def test_stellar_mass_limits_are_not_used(lim: int) -> None:
+    # An upper limit used to be drawn uniformly between 0 and the limit (masses near 0, the planet-to-star
+    # mass ratios inflated many times) under a flag saying "the limit is used". A limit is not a stellar mass.
+    with pytest.raises(IncompleteSystemError, match="only a limit on the stellar mass"):
+        system_from_rows([row("Host b", st_masslim=lim), row("Host c", pl_orbper=25.0, st_masslim=lim)], INFO)
+    # a measured value in another row is used, and the ignored limit is reported
+    s = system_from_rows([row("Host b", st_mass=0.6, st_masslim=lim), row("Host c", pl_orbper=25.0)], INFO)
+    assert s.star.mass_msun.value == 1.0 and s.star.mass_msun.provenance is Provenance.MEASURED
+    flag = next(f for f in s.flags if f.rule == "star_mass_limit_ignored")
+    assert "Host b" in flag.message
+
+
+def _kepler114_like() -> list[dict[str, Any]]:
+    # Kepler-114 in the archive: b's row has M* = 0.77 (Morton et al. 2016), c's and d's rows 0.56 (Xie 2014,
+    # also the source of their TTV masses). exostab used whichever row came first.
+    morton = {"st_mass": 0.77, "st_masserr1": 0.02, "st_masserr2": -0.022, "st_mass_reflink": REF_A}
+    xie = {"st_mass": 0.56, "st_masserr1": 0.06, "st_masserr2": -0.06, "st_mass_reflink": REF_B}
+    return [
+        row("Host b", pl_orbper=5.2, **morton),
+        row("Host c", pl_orbper=8.0, **xie),
+        row("Host d", pl_orbper=11.8, **xie),
+    ]
+
+
+def test_stellar_mass_is_the_median_of_the_rows_whatever_their_order() -> None:
+    rows = _kepler114_like()
+    for k in range(len(rows)):
+        s = system_from_rows(rows[k:] + rows[:k], INFO)
+        assert s.star.mass_msun.value == 0.56
+        assert s.star.mass_msun.reference == "Beta et al. 2021"
+        assert s.star.mass_msun.err_plus == 0.06
+        flag = next(f for f in s.flags if f.rule == "star_mass_inconsistent")
+        assert flag.planet is None
+        assert "0.77" in flag.message and "Alpha et al. 2020" in flag.message
+        assert "0.56" in flag.message and "Host c, Host d" in flag.message
+    # an even number of rows: the lower of the two middle values (the less stable choice)
+    two = [row("Host b", st_mass=1.0), row("Host c", pl_orbper=25.0, st_mass=0.9)]
+    assert system_from_rows(two, INFO).star.mass_msun.value == 0.9
+    assert system_from_rows(two[::-1], INFO).star.mass_msun.value == 0.9
+    assert any("lower of the two middle values" in f.message for f in system_from_rows(two, INFO).flags)
+    # ... which is only said when the two middle values differ
+    four = [*rows, {**rows[1], "pl_name": "Host e", "pl_letter": "e", "pl_orbper": 15.0}]  # 0.56 x 3, 0.77
+    assert not any("lower of the two" in f.message for f in system_from_rows(four, INFO).flags)
+    # rows that agree raise no flag; a row without a stellar mass is skipped
+    assert "star_mass_inconsistent" not in rules(pair())
+    s = system_from_rows([row("Host b", st_mass=None), row("Host c", pl_orbper=25.0, st_mass=0.8)], INFO)
+    assert s.star.mass_msun.value == 0.8
+    # `exostab list` shows the same stellar mass
+    assert list_systems(rows)[0].star_mass_msun == 0.56
 
 
 def test_controversial_flag() -> None:
@@ -252,6 +381,13 @@ def test_phase_rules() -> None:
     # periastron time from the same publication
     s = system_from_rows(pair(pl_orbtper=2460001.0, pl_orbtper_reflink=REF_A), INFO)
     assert s.planets[1].phase.kind is PhaseKind.PERIASTRON
+    # ... but without the argument of periastron the periastron direction, and so the planet's longitude, is
+    # random in every run: the phase is random and the report must say so
+    s = system_from_rows(pair(pl_orbtper=2460001.0, pl_orbtper_reflink=REF_A, pl_orblper=None), INFO)
+    assert s.planets[1].phase.kind is PhaseKind.RANDOM
+    c_rules = {f.rule for f in s.flags if f.planet == "Host c"}
+    assert "phase_randomized" in c_rules and "phase_from_periastron" not in c_rules
+    assert any(f.planet == "Host c" and "argument of periastron" in f.message for f in s.flags)
     # identical periastron times across planets are treated as an epoch, not a periastron time
     rows = [
         row("Host b", pl_orbtper=2450602.093, pl_orbtper_reflink=REF_A),
@@ -309,6 +445,50 @@ def test_damaged_cache_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     assert store.load_cache() is None
 
 
+def test_truncated_or_altered_cache_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A cut-off table used to load silently (csv fills missing fields with None): systems lost planets.
+    monkeypatch.delenv("EXOSTAB_OFFLINE")
+    three = [*pair(), row("Host d", pl_orbper=60.0)]
+    monkeypatch.setattr(store, "fetch_rows", lambda where: three)
+    load_rows()
+    table = store.cache_dir() / store.CACHE_TABLE
+    full = table.read_bytes()
+    assert store.load_cache() is not None
+    table.write_bytes(full[: len(full) * 2 // 3])  # last rows lost or cut in the middle
+    assert store.load_cache() is None
+    table.write_bytes(full.replace(b"25.0", b"26.0"))  # same number of rows, different content
+    assert store.load_cache() is None
+    # a cache written before the checksum existed is still accepted if its row count matches
+    table.write_bytes(full)
+    meta_path = store.cache_dir() / store.CACHE_META
+    meta = json.loads(meta_path.read_text())
+    del meta["sha256"]
+    meta_path.write_text(json.dumps(meta))
+    assert store.load_cache() is not None
+
+
+def test_interrupted_refresh_keeps_the_previous_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EXOSTAB_OFFLINE")
+    monkeypatch.setattr(store, "fetch_rows", lambda where: pair())
+    load_rows()
+    good = (store.cache_dir() / store.CACHE_TABLE).read_bytes()
+
+    def interrupted(rows: Any, path: Path) -> None:
+        path.write_text("pl_name,hostname\nHost b,Host\n")  # partly written when the user presses Ctrl-C
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(store, "fetch_rows", lambda where: [*pair(), row("Host d", pl_orbper=60.0)])
+    monkeypatch.setattr(store, "write_csv", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        load_rows(refresh=True)
+    assert (store.cache_dir() / store.CACHE_TABLE).read_bytes() == good
+    cached = store.load_cache()
+    assert cached is not None and cached[0] == pair()
+    assert sorted(p.name for p in store.cache_dir().iterdir()) == sorted(
+        [store.CACHE_META, store.CACHE_TABLE]
+    )
+
+
 def test_network_failure_falls_back_to_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("EXOSTAB_OFFLINE")
 
@@ -320,6 +500,24 @@ def test_network_failure_falls_back_to_snapshot(monkeypatch: pytest.MonkeyPatch)
     assert info.kind == "snapshot" and "unreachable" in (info.note or "")
     with pytest.raises(archive.ArchiveError):
         load_rows(refresh=True)
+
+
+def test_lookup_in_the_snapshot_says_only_the_snapshot_was_searched(monkeypatch: pytest.MonkeyPatch) -> None:
+    # During an outage without a cache, a real archive system outside the snapshot was reported as absent
+    # from the archive.
+    monkeypatch.delenv("EXOSTAB_OFFLINE")
+
+    def fail(where: str) -> None:
+        raise archive.ArchiveError("simulated outage")
+
+    monkeypatch.setattr(store, "fetch_rows", fail)
+    with pytest.raises(SystemNotFoundError) as err:
+        load_system("Kepler-1542")
+    message = str(err.value)
+    assert "offline snapshot" in message and "simulated outage" in message
+    assert "not the full archive table" in message and "in the archive table" not in message
+    with pytest.raises(SystemNotFoundError, match="offline snapshot"):
+        load_system("Kepler-1542", offline=True)
 
 
 def test_offline_flag_and_env() -> None:
@@ -338,6 +536,33 @@ def test_name_resolution() -> None:
     with pytest.raises(SystemNotFoundError, match="No multi-planet system"):
         load_system("Nonexistent-999")
     assert names.all_names(["b", "A", "c"]) == ["A", "b", "c"]
+
+
+def test_planet_name_that_normalises_to_another_host() -> None:
+    # In the archive, the planet "55 Cnc b" (host "55 Cnc") and the host "55 Cnc B" (an M-dwarf companion
+    # with its own planets) differ only in case, as do "TOI-2267 b" (host "TOI-2267 A") and "TOI-2267 B".
+    hosts = archive.group_by_host(
+        [
+            row("55 Cnc b", host="55 Cnc"),
+            row("55 Cnc e", host="55 Cnc"),
+            row("55 Cnc B b", host="55 Cnc B"),
+            row("55 Cnc B c", host="55 Cnc B"),
+            row("TOI-2267 b", host="TOI-2267 A"),
+            row("TOI-2267 c", host="TOI-2267 A"),
+            row("TOI-2267 d", host="TOI-2267 B"),
+        ]
+    )
+    assert names.resolve_host("55 Cnc b", hosts) == "55 Cnc"
+    assert names.resolve_host("55 Cnc B", hosts) == "55 Cnc B"
+    assert names.resolve_host("55 cnc e", hosts) == "55 Cnc"
+    assert names.resolve_host("TOI-2267 b", hosts) == "TOI-2267 A"
+    assert names.resolve_host("TOI-2267 B", hosts) == "TOI-2267 B"
+    # a typed name that matches both is refused instead of silently picking one
+    with pytest.raises(names.AmbiguousNameError) as err:
+        names.resolve_host("55 cnc b", hosts)
+    assert isinstance(err.value, SystemNotFoundError)  # the CLI and the web app report it like a miss
+    assert set(err.value.suggestions) == {"55 Cnc", "55 Cnc B"}
+    assert "'55 Cnc b'" in str(err.value) and "'55 Cnc B'" in str(err.value)
 
 
 def test_list_systems_filters() -> None:

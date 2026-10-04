@@ -9,10 +9,12 @@ Sampling rules (also listed in ``docs/data-assumptions.md``):
 
 * A value with asymmetric errors is drawn from a split normal distribution (one Gaussian half-width
   above the value and another below it). Values without published errors are held fixed.
-* Eccentricities below zero are set to zero, as in the HD 127195 Research Note; eccentricities are
-  capped at ``E_MAX``. Masses, periods and the stellar mass are redrawn until positive.
-* Upper limits: the nominal run uses the limit itself (the worst case for stability); draws are
-  uniform between zero and the limit.
+* Eccentricities below zero are set to zero, as in the HD 127195 Research Note; drawn eccentricities
+  are capped at ``E_MAX``, and a nominal eccentricity above it is refused (the loaders reject such
+  systems). Masses, periods and the stellar mass are redrawn until positive.
+* Upper limits, allowed only on planet masses and eccentricities: the nominal run uses the limit itself
+  (the worst case for stability); draws are uniform between zero and the limit. An upper limit on any
+  other value (stellar mass, period, angle, reference time) is refused.
 * Orbital phases are propagated from the published reference time to the common epoch ``t0`` with the
   drawn period, so period and timing uncertainties both enter the draws.
 * ``inclination_prior="isotropic"`` draws one inclination per run for the whole (coplanar) system with
@@ -132,10 +134,20 @@ def choose_epoch(system: System) -> float | None:
 
     If the system defines ``epoch_jd`` it is used. Otherwise, among the published reference times
     (transit or periastron), pick the one that minimises the summed variance of the propagated mean
-    longitudes. Returns None if no planet has a time-based phase.
+    longitudes. Returns None if no planet has a time-based phase. Mean anomalies and longitudes are
+    defined at the system epoch, so combining them with reference times without ``epoch_jd`` is an error:
+    their phase relative to the timed planets would depend on whichever reference time is picked.
     """
     if system.epoch_jd is not None:
         return system.epoch_jd
+    angles = [
+        p.name for p in system.planets if p.phase.kind in (PhaseKind.MEAN_ANOMALY, PhaseKind.MEAN_LONGITUDE)
+    ]
+    if angles and any(p.phase.kind in (PhaseKind.TRANSIT, PhaseKind.PERIASTRON) for p in system.planets):
+        raise ValueError(
+            f"{system.name}: epoch_jd is required when mean anomalies or longitudes "
+            f"({', '.join(angles)}) are combined with transit or periastron times"
+        )
     times = [
         p.phase.value.require()
         for p in system.planets
@@ -186,6 +198,26 @@ def _sin_i(rng: np.random.Generator, prior: InclinationPrior, draw: bool) -> flo
     return math.sqrt(1 - cos_i**2)
 
 
+def _refuse_misplaced_limits(system: System) -> None:
+    """Upper limits make sense only for planet masses and eccentricities (see the module docstring).
+
+    Drawn uniformly from zero, a limited stellar mass gives stars of almost no mass (and its limit is the
+    most stable case, not the worst), a limited period reorders the planets, and a limited angle or
+    reference time is meaningless.
+    """
+    values = [("stellar mass", system.star.mass_msun)]
+    for p in system.planets:
+        values += [(f"{p.name} period", p.period_days), (f"{p.name} omega", p.omega_deg)]
+        if p.phase.value is not None:
+            values.append((f"{p.name} phase", p.phase.value))
+    limited = [what for what, v in values if v.provenance is Provenance.UPPER_LIMIT]
+    if limited:
+        raise ValueError(
+            f"{system.name}: an upper limit is only supported for planet masses and eccentricities, not for "
+            + ", ".join(limited)
+        )
+
+
 def realize(
     system: System,
     rng: np.random.Generator,
@@ -195,6 +227,7 @@ def realize(
     inclination_prior: InclinationPrior = "none",
 ) -> Realization:
     """Build one realization. ``draw=False`` gives the nominal run."""
+    _refuse_misplaced_limits(system)
     t0 = choose_epoch(system)
 
     def pick(v: Value, *, positive: bool = False) -> float:
@@ -208,7 +241,13 @@ def realize(
         m_earth = pick(p.mass_earth, positive=True)
         if p.mass_kind is MassKind.MINIMUM:
             m_earth /= sin_i
-        e = min(max(pick(p.eccentricity), 0.0), E_MAX)
+        e = pick(p.eccentricity)
+        if not draw and e > E_MAX:
+            # Capping the nominal run would check a different orbit from the one the report shows.
+            raise ValueError(
+                f"{p.name}: eccentricity {e:g} is above {E_MAX:g}, the largest exostab integrates"
+            )
+        e = min(max(e, 0.0), E_MAX)
         if p.omega_deg.is_known:
             omega = math.radians(pick(p.omega_deg)) % TWO_PI
         else:

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 TABLE = "pscomppars"
+ARCHIVE_URL = "https://exoplanetarchive.ipac.caltech.edu"  # base for the relative links in *_reflink cells
 TAP_SERVICE = "https://exoplanetarchive.ipac.caltech.edu/TAP"
 MULTI_PLANET_WHERE = "sy_pnum >= 2"
 

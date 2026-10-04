@@ -65,6 +65,14 @@ def test_eccentricity_capped() -> None:
     assert max(r.bodies[1].e for r in sampling.realizations(s, 100, seed=0)) <= sampling.E_MAX
 
 
+def test_nominal_eccentricity_above_the_cap_is_refused() -> None:
+    # The nominal run used to be capped silently: the verdict was for e = 0.95 while the card showed 0.97.
+    s = two_planet_system()
+    p = s.planets[1].model_copy(update={"eccentricity": V(0.97)})
+    with pytest.raises(ValueError, match=r"above 0\.95"):
+        sampling.realizations(s.model_copy(update={"planets": (s.planets[0], p)}), 0, seed=0)
+
+
 def test_true_to_mean_anomaly() -> None:
     assert sampling.true_to_mean_anomaly(0.0, 0.3) == pytest.approx(0.0)
     assert sampling.true_to_mean_anomaly(math.pi, 0.3) == pytest.approx(math.pi)
@@ -117,6 +125,18 @@ def test_epoch_given_or_absent() -> None:
     s = two_planet_system()
     assert sampling.choose_epoch(s) is None
     assert sampling.choose_epoch(s.model_copy(update={"epoch_jd": 5.0})) == 5.0
+
+
+def test_mean_longitudes_next_to_reference_times_need_an_epoch() -> None:
+    # Planet b's mean longitude has no stated epoch, so its phase relative to c's transit time is undefined.
+    s = two_planet_system()
+    c = s.planets[1].model_copy(update={"phase": Phase(kind=PhaseKind.TRANSIT, value=V(2460000.0, 0.001))})
+    mixed = s.model_copy(update={"planets": (s.planets[0], c)})
+    with pytest.raises(ValueError, match="epoch_jd"):
+        sampling.choose_epoch(mixed)
+    with pytest.raises(ValueError, match="epoch_jd"):
+        sampling.realizations(mixed, 0, seed=0)
+    assert sampling.choose_epoch(mixed.model_copy(update={"epoch_jd": 2460003.0})) == 2460003.0
 
 
 def test_random_phase_and_omega_are_uniform() -> None:
@@ -198,3 +218,15 @@ def test_star_and_period_missing_errors_are_fixed_in_draws() -> None:
     reals = sampling.realizations(s, 3, seed=0)
     assert {r.m_star for r in reals} == {1.0}
     assert {r.bodies[1].P for r in reals} == {days_to_years(20.0)}
+
+
+def test_upper_limits_outside_masses_and_eccentricities_are_refused() -> None:
+    # A stellar mass drawn uniformly from 0 to its limit inflates the planet-to-star mass ratios many times,
+    # and the limit is the most stable choice, not the worst case.
+    s = two_planet_system()
+    star = s.star.model_copy(update={"mass_msun": V(1.0, provenance=Provenance.UPPER_LIMIT)})
+    with pytest.raises(ValueError, match="upper limit"):
+        sampling.realizations(s.model_copy(update={"star": star}), 3, seed=0)
+    p = s.planets[1].model_copy(update={"period_days": V(250.0, provenance=Provenance.UPPER_LIMIT)})
+    with pytest.raises(ValueError, match="Test c period"):
+        sampling.realizations(s.model_copy(update={"planets": (s.planets[0], p)}), 3, seed=0)

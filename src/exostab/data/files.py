@@ -1,22 +1,25 @@
 """User-supplied systems in YAML.
 
 A value can be a number, or a mapping with ``value`` and optional ``err`` (symmetric), ``err_plus`` /
-``err_minus`` (asymmetric), ``upper_limit: true`` and ``reference``. Units are part of the key names.
-See ``examples/two_planet.yaml`` for a complete example::
+``err_minus`` (asymmetric), ``upper_limit: true`` (planet masses and eccentricities only) and ``reference``.
+Units are part of the key names. ``examples/two_planet.yaml`` shows every key, with the alternatives in
+comments; in short::
 
     name: My system
-    epoch_jd: 2460000.0            # optional; epoch of mean anomalies / mean longitudes
+    epoch_jd: 2460000.0            # epoch of mean anomalies / mean longitudes; required if other planets
+                                   # give transit or periastron times
     star:
       name: My star
       mass_msun: {value: 1.0, err: 0.05}
     planets:
       - name: My star b
-        period_days: 100.0           # or semimajor_axis_au
+        period_days: 100.0           # or semimajor_axis_au (both: they must agree)
         mass_earth: {value: 30, err: 3}   # or mass_jupiter / mass_msun, or radius_earth only
         mass_kind: true              # true | minimum | estimated
         eccentricity: {value: 0.05, err: 0.02}
         omega_deg: 90                # argument of periastron
-        mean_longitude_deg: 10       # or mean_anomaly_deg / transit_time_jd / periastron_time_jd
+        mean_longitude_deg: 10       # or transit_time_jd, or mean_anomaly_deg / periastron_time_jd
+                                     # (these two need omega_deg)
 
 Missing values follow the same completion rules as archive data (:mod:`exostab.data.completion`).
 """
@@ -27,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 
 from ..models import (
     CompletionFlag,
@@ -40,7 +44,15 @@ from ..models import (
     System,
     Value,
 )
-from ..units import MEARTH_IN_MSUN, MJUP_IN_MEARTH, period_from_semimajor_axis, years_to_days
+from ..sampling import E_MAX
+from ..units import (
+    MEARTH_IN_MSUN,
+    MJUP_IN_MEARTH,
+    days_to_years,
+    period_from_semimajor_axis,
+    semimajor_axis_from_period,
+    years_to_days,
+)
 from .completion import IncompleteSystemError, coplanar_flag
 from .massradius import MassRadiusError, mass_from_radius
 
@@ -49,7 +61,10 @@ class SystemFileError(ValueError):
     """The YAML file does not describe a valid system."""
 
 
-_PLANET_KEYS = {
+TOP_KEYS = {"name", "epoch_jd", "star", "planets", "notes"}
+STAR_KEYS = {"name", "mass_msun"}
+VALUE_KEYS = {"value", "err", "err_plus", "err_minus", "upper_limit", "reference"}
+PLANET_KEYS = {
     "name",
     "period_days",
     "semimajor_axis_au",
@@ -74,18 +89,27 @@ _PHASE_KEYS = {
 }
 
 
-def _value(raw: Any, *, scale: float = 1.0, reference: str | None = None, where: str = "") -> Value:
+def _value(
+    raw: Any, *, scale: float = 1.0, reference: str | None = None, where: str = "", allow_limit: bool = False
+) -> Value:
     if isinstance(raw, bool) or raw is None:
         raise SystemFileError(f"{where}: expected a number or a mapping, got {raw!r}")
     if isinstance(raw, (int, float)):
         return Value(value=float(raw) * scale, reference=reference)
     if not isinstance(raw, dict):
         raise SystemFileError(f"{where}: expected a number or a mapping, got {raw!r}")
-    unknown = set(raw) - {"value", "err", "err_plus", "err_minus", "upper_limit", "reference"}
+    unknown = set(raw) - VALUE_KEYS
     if unknown:
         raise SystemFileError(f"{where}: unknown keys {sorted(unknown)}")
     if "value" not in raw:
         raise SystemFileError(f"{where}: missing 'value'")
+    limit = raw.get("upper_limit", False)
+    if not isinstance(limit, bool):
+        raise SystemFileError(f"{where}: upper_limit must be true or false, got {limit!r}")
+    if limit and not allow_limit:
+        # Draws are uniform between 0 and an upper limit: meaningful for a planet mass or an eccentricity, not
+        # for a stellar mass, a period, an angle or an absolute time.
+        raise SystemFileError(f"{where}: upper_limit is only supported for planet masses and eccentricities")
     err_p = raw.get("err_plus", raw.get("err"))
     err_m = raw.get("err_minus", raw.get("err"))
     try:
@@ -93,20 +117,46 @@ def _value(raw: Any, *, scale: float = 1.0, reference: str | None = None, where:
             value=float(raw["value"]) * scale,
             err_plus=None if err_p is None else abs(float(err_p)) * scale,
             err_minus=None if err_m is None else abs(float(err_m)) * scale,
-            provenance=Provenance.UPPER_LIMIT if raw.get("upper_limit") else Provenance.MEASURED,
+            provenance=Provenance.UPPER_LIMIT if limit else Provenance.MEASURED,
             reference=raw.get("reference", reference),
         )
     except (TypeError, ValueError) as exc:
         raise SystemFileError(f"{where}: {exc}") from exc
 
 
+def _invalid(exc: ValueError) -> str:
+    """The messages of a model validation error, without pydantic's boilerplate."""
+    if isinstance(exc, ValidationError):
+        return "; ".join(str(e["msg"]).removeprefix("Value error, ") for e in exc.errors())
+    return str(exc)
+
+
 def _flag(planet: str | None, parameter: str, rule: str, message: str) -> CompletionFlag:
     return CompletionFlag(planet=planet, parameter=parameter, rule=rule, message=message)
 
 
+AXIS_TOLERANCE = 0.10  # relative; Kepler's a scales as M*^(1/3), so a 30% different stellar mass gives 9%
+
+
+def _check_axis(name: str, a: Value, period_days: float, m_total_msun: float) -> None:
+    """Refuse a semi-major axis that contradicts the period (the period is what the integrations use).
+
+    Allowed: 10% (stellar masses from different sources) or three times the axis's relative error, whichever
+    is larger.
+    """
+    a_kepler = semimajor_axis_from_period(days_to_years(period_days), m_total_msun)
+    rel_err = 0.5 * ((a.err_plus or 0.0) + (a.err_minus or 0.0)) / a.require()
+    if abs(a.require() / a_kepler - 1) > max(AXIS_TOLERANCE, 3 * rel_err):
+        raise SystemFileError(
+            f"{name}: semimajor_axis_au = {a.value:g} AU disagrees with period_days = {period_days:g} d, "
+            f"which gives {a_kepler:.4g} AU for the stellar and planet mass; give only one of them or check "
+            "the stellar mass"
+        )
+
+
 def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx: int) -> Planet:
     name = str(raw.get("name") or f"planet {idx + 1}")
-    unknown = set(raw) - _PLANET_KEYS
+    unknown = set(raw) - PLANET_KEYS
     if unknown:
         raise SystemFileError(f"{name}: unknown keys {sorted(unknown)}")
     ref = raw.get("reference")
@@ -129,7 +179,9 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
         scale = {"mass_earth": 1.0, "mass_jupiter": MJUP_IN_MEARTH, "mass_msun": 1 / MEARTH_IN_MSUN}[
             mass_keys[0]
         ]
-        mass = _value(raw[mass_keys[0]], scale=scale, reference=ref, where=f"{name}.{mass_keys[0]}")
+        mass = _value(
+            raw[mass_keys[0]], scale=scale, reference=ref, where=f"{name}.{mass_keys[0]}", allow_limit=True
+        )
         if kind is MassKind.MINIMUM:
             flags.append(
                 _flag(
@@ -140,7 +192,23 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
                     "--inclination-prior is set.",
                 )
             )
+        elif kind is MassKind.ESTIMATED:
+            mass = mass.model_copy(update={"provenance": Provenance.ESTIMATED})
+            flags.append(
+                _flag(
+                    name,
+                    "mass",
+                    "mass_estimated_in_file",
+                    "The file marks this mass as estimated (for example from a mass-radius relation), not "
+                    "measured.",
+                )
+            )
     elif radius is not None:
+        if "mass_kind" in raw and kind is not MassKind.ESTIMATED:
+            raise SystemFileError(
+                f"{name}: mass_kind {kind.value!r} needs a mass; with radius_earth only, the mass is "
+                "estimated from the radius (leave out mass_kind or set it to estimated)"
+            )
         try:
             m = mass_from_radius(radius.require())
         except MassRadiusError as exc:
@@ -173,11 +241,18 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
         )
 
     # period
+    a = None
+    m_total = m_star + mass.require() * MEARTH_IN_MSUN  # Msun
+    if "semimajor_axis_au" in raw:
+        a = _value(raw["semimajor_axis_au"], reference=ref, where=f"{name}.semimajor_axis_au")
+        if not a.require() > 0:
+            raise SystemFileError(f"{name}: semimajor_axis_au must be positive, got {a.value:g}")
     if "period_days" in raw:
         period = _value(raw["period_days"], reference=ref, where=f"{name}.period_days")
-    elif "semimajor_axis_au" in raw:
-        a = _value(raw["semimajor_axis_au"], reference=ref, where=f"{name}.semimajor_axis_au")
-        P = years_to_days(period_from_semimajor_axis(a.require(), m_star + mass.require() * MEARTH_IN_MSUN))
+        if a is not None and period.require() > 0:
+            _check_axis(name, a, period.require(), m_total)
+    elif a is not None:
+        P = years_to_days(period_from_semimajor_axis(a.require(), m_total))
         rel = 0.5 * ((a.err_plus or 0) + (a.err_minus or 0)) / a.require()
         err = 1.5 * rel * P if a.has_errors else None
         period = Value(value=P, err_plus=err, err_minus=err, provenance=Provenance.DERIVED, reference=ref)
@@ -194,7 +269,12 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
 
     # eccentricity and argument of periastron
     if "eccentricity" in raw:
-        ecc = _value(raw["eccentricity"], reference=ref, where=f"{name}.eccentricity")
+        ecc = _value(raw["eccentricity"], reference=ref, where=f"{name}.eccentricity", allow_limit=True)
+        if ecc.require() > E_MAX:
+            raise SystemFileError(
+                f"{name}: eccentricity {ecc.value:g} is above {E_MAX:g}, the largest eccentricity exostab "
+                "integrates"
+            )
         if ecc.provenance is Provenance.UPPER_LIMIT:
             flags.append(
                 _flag(
@@ -226,6 +306,13 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
     given = [k for k in _PHASE_KEYS if k in raw]
     if len(given) > 1:
         raise SystemFileError(f"{name}: give at most one of {given}")
+    if given and given[0] in ("mean_anomaly_deg", "periastron_time_jd") and "omega_deg" not in raw:
+        # These place the planet relative to its periastron; without its direction (omega_deg, drawn at
+        # random) the planet's longitude would be random in every run while the report said the phase was set.
+        raise SystemFileError(
+            f"{name}: {given[0]} needs omega_deg (the direction of the periastron); give omega_deg, or the "
+            "mean longitude (mean_longitude_deg) instead"
+        )
     if given:
         phase = Phase(
             kind=_PHASE_KEYS[given[0]], value=_value(raw[given[0]], reference=ref, where=f"{name}.{given[0]}")
@@ -247,9 +334,10 @@ def _planet(raw: dict[str, Any], m_star: float, flags: list[CompletionFlag], idx
             omega_deg=omega,
             phase=phase,
             radius_earth=radius,
+            semimajor_axis_au=a,
         )
     except ValueError as exc:
-        raise SystemFileError(str(exc)) from exc
+        raise SystemFileError(_invalid(exc)) from exc
 
 
 def load_system_file(path: str | Path) -> System:
@@ -263,15 +351,21 @@ def load_system_file(path: str | Path) -> System:
         raise SystemFileError(f"{p} is not valid YAML: {exc}") from exc
     if not isinstance(raw, dict):
         raise SystemFileError(f"{p}: the top level must be a mapping")
-    unknown = set(raw) - {"name", "epoch_jd", "star", "planets", "notes"}
+    unknown = set(raw) - TOP_KEYS
     if unknown:
         raise SystemFileError(f"{p}: unknown top-level keys {sorted(unknown)}")
     star_raw = raw.get("star")
     if not isinstance(star_raw, dict) or "mass_msun" not in star_raw:
         raise SystemFileError(f"{p}: 'star' must be a mapping with 'mass_msun'")
+    unknown = set(star_raw) - STAR_KEYS
+    if unknown:  # e.g. a misspelt error key, which would leave the stellar mass fixed in every draw
+        raise SystemFileError(f"{p}: star: unknown keys {sorted(unknown)}")
     star_mass = _value(star_raw["mass_msun"], where="star.mass_msun")
     name = str(raw.get("name") or p.stem)
-    star = Star(name=str(star_raw.get("name") or name), mass_msun=star_mass)
+    try:
+        star = Star(name=str(star_raw.get("name") or name), mass_msun=star_mass)
+    except ValueError as exc:
+        raise SystemFileError(f"{p}: star: {_invalid(exc)}") from exc
     planets_raw = raw.get("planets")
     if not isinstance(planets_raw, list) or len(planets_raw) < 2:
         raise SystemFileError(f"{p}: 'planets' must be a list of at least two planets")
@@ -284,11 +378,32 @@ def load_system_file(path: str | Path) -> System:
     planets.sort(key=lambda q: q.period_days.require())
     flags.append(coplanar_flag())
     epoch = raw.get("epoch_jd")
-    return System(
-        name=name,
-        star=star,
-        planets=tuple(planets),
-        epoch_jd=float(epoch) if epoch is not None else None,
-        source=DataSource(kind="file", path=str(p), note=str(raw["notes"]) if raw.get("notes") else None),
-        flags=tuple(flags),
-    )
+    kinds = {q.phase.kind for q in planets}
+    if (
+        epoch is None
+        and kinds & {PhaseKind.MEAN_ANOMALY, PhaseKind.MEAN_LONGITUDE}
+        and kinds & {PhaseKind.TRANSIT, PhaseKind.PERIASTRON}
+    ):
+        # The angles hold at an epoch the file does not state; taking them at one of the reference times would
+        # make the relative phases arbitrary.
+        raise SystemFileError(
+            f"{p}: epoch_jd is required when mean anomalies or mean longitudes are combined with transit or "
+            "periastron times: give the epoch at which the angles hold"
+        )
+    try:
+        if isinstance(epoch, bool):  # YAML reads "yes"/"no" as booleans, which float() would accept
+            raise TypeError
+        epoch_jd = None if epoch is None else float(epoch)
+    except (TypeError, ValueError) as exc:
+        raise SystemFileError(f"{p}: epoch_jd must be a Julian date (a number), got {epoch!r}") from exc
+    try:
+        return System(
+            name=name,
+            star=star,
+            planets=tuple(planets),
+            epoch_jd=epoch_jd,
+            source=DataSource(kind="file", path=str(p), note=str(raw["notes"]) if raw.get("notes") else None),
+            flags=tuple(flags),
+        )
+    except ValueError as exc:
+        raise SystemFileError(f"{p}: {_invalid(exc)}") from exc
