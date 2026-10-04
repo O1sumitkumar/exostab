@@ -5,11 +5,14 @@ from dataclasses import replace
 
 import pytest
 
-from conftest import two_planet_system
-from exostab.analysis import CheckSettings, check_system, overall_verdict
+from conftest import V, two_planet_system
+from exostab.analysis import CheckSettings, check_system, overall_verdict, upper_limit_inputs
+from exostab.data import archive, system_from_rows
+from exostab.data.store import TableInfo
 from exostab.indicators import AGREEMENT, DrawStats, IndicatorResult, Verdict, combine
 from exostab.indicators import megno as nb
 from exostab.integrate import RunResult
+from exostab.models import Provenance
 from exostab.sampling import realizations
 
 S, M, U, INC = Verdict.STABLE, Verdict.MARGINAL, Verdict.UNSTABLE, Verdict.INCONCLUSIVE
@@ -125,8 +128,19 @@ def test_integrate_all_serial_and_parallel_agree() -> None:
 # ------------------------------------------------------------------------------------------ overall verdict
 
 
-def ind(name: str, v: Verdict) -> IndicatorResult:
-    return IndicatorResult(name=name, title=name, verdict=v, nominal_verdict=v, summary="")
+def ind(name: str, v: Verdict, draws: list[Verdict] | None = None) -> IndicatorResult:
+    """An indicator result whose draws (20 sharing its verdict by default; [] for none) are as given."""
+    d = [v] * 20 if draws is None else draws
+    stats = DrawStats.from_verdicts(d) if d else None
+    return IndicatorResult(name=name, title=name, verdict=v, nominal_verdict=v, summary="", draws=stats)
+
+
+def nbody_ind(regular: int, encounters: int = 0, chaotic: int = 0, **nominal: object) -> IndicatorResult:
+    """N-body result from a nominal run (``nominal`` overrides), the given draws and an agreeing IAS15 run."""
+    runs = [result(**nominal)]
+    runs += [result(label="draw")] * regular + [result(label="draw", megno=5.0)] * chaotic
+    runs += [result(label="draw", status="encounter", t_end=5.0)] * encounters
+    return nb.evaluate(runs, result(**{**nominal, "integrator": "ias15"}))
 
 
 @pytest.mark.parametrize(
@@ -165,6 +179,189 @@ def test_plot_samples_never_change_the_result() -> None:
             k: v.verdict for k, v in results[-1].report.indicators.items()
         }
         assert res.report.overall.verdict is results[-1].report.overall.verdict
+
+
+def test_overall_unstable_states_the_draw_counts() -> None:
+    o = overall_verdict(
+        {"hill": ind("hill", U), "amd": ind("amd", U), "nbody": nbody_ind(1, 19, status="encounter")}
+    )
+    assert o.verdict is U
+    assert "for the nominal parameters and for 19 of 20 draws within the published uncertainties" in o.summary
+
+
+def test_unstable_nbody_resting_on_upper_limits_is_not_overall_unstable() -> None:
+    """HD 215152 was "unstable" with its masses set to astrometric upper limits about 300 x m sin i."""
+    inds = {"hill": ind("hill", U), "amd": ind("amd", M), "nbody": nbody_ind(0, 20, status="encounter")}
+    o = overall_verdict(inds, upper_limits=["masses of X b and X c"])
+    assert o.verdict is M
+    assert "(masses of X b and X c)" in o.summary and "does not show that the system is unstable" in o.summary
+    assert "within the published uncertainties" not in o.summary
+    assert "Only upper limits are published for: masses of X b and X c." in o.reasons
+    # A limit is the worst case for stability, so a stable result at the limits stands.
+    stable = {"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbody_ind(20)}
+    assert overall_verdict(stable, upper_limits=["mass of X b"]).verdict is S
+
+
+def test_upper_limit_inputs() -> None:
+    s = two_planet_system()
+    assert upper_limit_inputs(s) == []
+    ul = Provenance.UPPER_LIMIT
+    b, c = s.planets
+    s = s.model_copy(
+        update={
+            "star": s.star.model_copy(update={"mass_msun": V(1.0, provenance=ul)}),
+            "planets": (
+                b.model_copy(
+                    update={"mass_earth": V(10.0, provenance=ul), "eccentricity": V(0.1, provenance=ul)}
+                ),
+                c.model_copy(update={"mass_earth": V(10.0, provenance=ul)}),
+            ),
+        }
+    )
+    assert upper_limit_inputs(s) == ["stellar mass", "masses of Test b and Test c", "eccentricity of Test b"]
+
+
+def test_check_system_with_upper_limit_masses_is_never_unstable() -> None:
+    """Two planets 5% apart in period with masses below 1000 Earth masses: every run has a close encounter."""
+    s = two_planet_system(period_ratio=1.05, m_earth=(1000.0, 1000.0))
+    planets = tuple(
+        p.model_copy(update={"mass_earth": V(1000.0, provenance=Provenance.UPPER_LIMIT)}) for p in s.planets
+    )
+    s = s.model_copy(update={"planets": planets})
+    res = check_system(s, CheckSettings(orbits=300, draws=3, seed=0, jobs=1, n_samples=5, ias15_check=False))
+    assert res.report.indicators["nbody"].verdict is U
+    assert res.report.overall.verdict is M
+    assert "masses of Test b and Test c" in res.report.overall.summary
+
+
+def hd215152_rows(mass_limit: int) -> list[dict[str, object]]:
+    """HD 215152 b-e as in the archive cache of 2026-09-28: Delisle et al. (2018) orbits, Kiefer et al. (2021)
+    astrometric mass upper limits (Earth masses, ``pl_bmasselim = 1``) about 300 times the m sin i."""
+    rows: list[dict[str, object]] = []
+    for letter, period_days, err_plus, err_minus, mass_earth in (
+        ("b", 5.75999, 0.00157, -0.00175, 565.42),
+        ("c", 7.28243, 0.00451, -0.00827, 468.80),
+        ("d", 10.86499, 0.00564, -0.00613, 770.42),
+        ("e", 25.1967, 0.0476, -0.0505, 975.42),
+    ):
+        r: dict[str, object] = dict.fromkeys(archive.COLUMN_NAMES)
+        r.update(
+            pl_name=f"HD 215152 {letter}",
+            hostname="HD 215152",
+            pl_letter=letter,
+            sy_pnum=4,
+            sy_snum=1,
+            cb_flag=0,
+            tran_flag=0,
+            pl_orbper=period_days,
+            pl_orbpererr1=err_plus,
+            pl_orbpererr2=err_minus,
+            pl_orbperlim=0,
+            pl_orbeccen=0.0,
+            pl_orbeccenlim=0,
+            pl_bmasse=mass_earth,
+            pl_bmasselim=mass_limit,
+            pl_bmassprov="Mass",
+            st_mass=0.77,
+            st_masserr1=0.015,
+            st_masserr2=-0.015,
+            st_masslim=0,
+        )
+        rows.append(r)
+    return rows
+
+
+def test_hd215152_with_upper_limit_masses_is_not_overall_unstable() -> None:
+    """The reported case: exostab called HD 215152 "unstable" with its masses set to the upper limits."""
+    info = TableInfo(kind="archive-cache", retrieved_utc="2026-09-28T14:30:00+00:00", path=None)
+    settings = CheckSettings(orbits=300, draws=3, seed=0, jobs=1, n_samples=5, ias15_check=False)
+    res = check_system(system_from_rows(hd215152_rows(mass_limit=1), info), settings)
+    assert res.report.indicators["nbody"].verdict is U  # every run with masses at or below the limits
+    assert res.report.overall.verdict is M
+    assert "masses of HD 215152 b, HD 215152 c, HD 215152 d and HD 215152 e" in res.report.overall.summary
+    # The same masses published as measurements would be direct evidence of instability.
+    res = check_system(system_from_rows(hd215152_rows(mass_limit=0), info), settings)
+    assert res.report.overall.verdict is U
+
+
+def test_no_draws_never_give_a_confident_overall_verdict() -> None:
+    """With --draws 0 nothing was tested against the uncertainties."""
+    o = overall_verdict({"hill": ind("hill", S, []), "amd": ind("amd", S, []), "nbody": nbody_ind(0)})
+    assert o.verdict is M and "--draws 0" in o.summary and o.reasons
+    o = overall_verdict(
+        {"hill": ind("hill", U, []), "amd": ind("amd", U, []), "nbody": nbody_ind(0, status="encounter")}
+    )
+    assert o.verdict is M and "--draws 0" in o.summary
+    assert "draws within" not in o.summary and "almost all draws" not in o.summary
+    o = overall_verdict(
+        {"hill": ind("hill", S, []), "amd": ind("amd", S, []), "nbody": nbody_ind(0, energy_error=1e-3)}
+    )
+    assert o.verdict is INC  # an untrustworthy integration stays inconclusive
+    res = check_system(two_planet_system(err=True), CheckSettings(orbits=300, draws=0, jobs=1, n_samples=5))
+    assert res.report.indicators["nbody"].verdict is S and res.report.overall.verdict is M
+
+
+def test_stable_summary_never_hides_failing_draws() -> None:
+    every = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbody_ind(20)})
+    assert every.verdict is S and every.reasons == []
+    assert "no sign of instability for the nominal parameters or any of the 20 draws" in every.summary
+    # One draw fails the Hill criterion (a sufficient condition): still stable, but said so.
+    o = overall_verdict(
+        {"hill": ind("hill", S, [S] * 19 + [U]), "amd": ind("amd", S), "nbody": nbody_ind(20)}
+    )
+    assert o.verdict is S and "no sign of instability" not in o.summary
+    assert o.reasons == ["hill: of 20 draws, 1 unstable"] and "hill: of 20 draws, 1 unstable" in o.summary
+    o = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbody_ind(19, chaotic=1)})
+    assert o.verdict is S and o.reasons == ["N-body + MEGNO: of 20 draws, 1 chaotic"]
+
+
+def test_a_close_encounter_in_any_draw_blocks_overall_stable() -> None:
+    """19 regular draws and 1 close encounter keep the N-body verdict 'stable' (95% rule), not the overall one."""
+    nbi = nbody_ind(19, 1)
+    assert nbi.verdict is S
+    o = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbi})
+    assert o.verdict is M and "no sign of instability" not in o.summary
+    assert "1 of 20 N-body draws had a close encounter or escape" in o.summary
+    assert o.reasons == ["N-body + MEGNO: of 20 draws, 1 with a close encounter or escape"]
+    # Kepler-19: the same N-body runs with marginal analytic criteria.
+    o = overall_verdict({"hill": ind("hill", M), "amd": ind("amd", M), "nbody": nbi})
+    assert o.verdict is M and "shows regular motion" not in o.summary
+    assert "19 are regular, 0 chaotic and 1 had close encounters or escapes" in o.summary
+
+
+def test_marginal_summary_names_the_actual_reason() -> None:
+    # ups And: every run is regular, but the outermost planet completes only 36 orbits.
+    nbi = nbody_ind(20, n_orbits_outermost=36)
+    assert nbi.verdict is M
+    o = overall_verdict({"hill": ind("hill", M), "amd": ind("amd", M), "nbody": nbi})
+    assert o.verdict is M and "chaotic or unstable" not in o.summary and "disagree" not in o.summary
+    assert "Every WHFast run is regular (the nominal parameters and all 20 draws)" in o.summary
+    assert "only 36 orbits" in o.summary and "(hill: marginal, amd: marginal)" in o.summary
+    # WHFast and IAS15 disagree on a nominal run that is otherwise regular.
+    nbi = nb.evaluate([result()] + [result(label="draw")] * 20, result(integrator="ias15", megno=4.0))
+    o = overall_verdict({"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbi})
+    assert o.verdict is M and "chaotic or unstable" not in o.summary
+    assert "WHFast and IAS15 disagree on the nominal run (regular vs chaotic)" in o.summary
+    # Draws that really are chaotic or unstable (HD 127195 with random phases).
+    o = overall_verdict(
+        {"hill": ind("hill", M), "amd": ind("amd", S), "nbody": nbody_ind(13, 1, 6, megno=9.8)}
+    )
+    assert "the nominal run is chaotic; of 20 draws, 13 are regular, 6 chaotic and 1 had" in o.summary
+    assert (
+        "Part of the parameter range allowed by the published uncertainties is chaotic or unstable"
+        in o.summary
+    )
+    # Draws below an upper limit are not "within the uncertainties".
+    o = overall_verdict(
+        {"hill": ind("hill", M), "amd": ind("amd", S), "nbody": nbody_ind(10, 5, 5)},
+        upper_limits=["mass of X b"],
+    )
+    assert "allowed by the published uncertainties and upper limits is chaotic or unstable" in o.summary
+    assert "upper limits (mass of X b)" in o.summary
+    # GJ 876: regular N-body motion in every run, analytic criteria failing.
+    o = overall_verdict({"hill": ind("hill", U), "amd": ind("amd", M), "nbody": nbody_ind(20)})
+    assert o.verdict is M and "regular motion for the nominal parameters and all 20 draws" in o.summary
+    assert "mean-motion resonances" in o.summary
 
 
 def test_check_system_end_to_end_small() -> None:
