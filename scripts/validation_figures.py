@@ -24,7 +24,7 @@ from tests.validation.test_validation import inner_solar_system, pair_at
 from exostab.analysis import CheckSettings, check_system
 from exostab.data import load_system, load_system_file
 from exostab.indicators.hill import gladman_critical_separation
-from exostab.indicators.megno import MEGNO_CHAOTIC, classify_run, run_many
+from exostab.indicators.megno import ENERGY_ERROR_MAX, MEGNO_CHAOTIC, classify_run, run_many
 from exostab.integrate import RunConfig, run
 from exostab.plots import _RC, INK, MUTED, PLANET_COLORS, STATUS, _plotted_megno
 
@@ -169,6 +169,14 @@ def hd127195_figure() -> Path:
             ax.text(xs[i] - w / 2, note[i] + 2, str(note[i]), ha="center", fontsize=8, color=INK)
             ax.text(xs[i] + w / 2, ours[i] + 2, str(ours[i]), ha="center", fontsize=8, color=INK)
         ax.set_xticks(xs, labels)
+        if counts.get("inconclusive"):
+            # the Note has no such class: say how many exostab draws the three bars leave out
+            ax.set_xlabel(
+                f"{counts['inconclusive']} more exostab draws are inconclusive (relative energy error above "
+                f"{ENERGY_ERROR_MAX:g}, or a planet passing the star) and not shown",
+                fontsize=8,
+                color=MUTED,
+            )
         ax.set_ylabel("draws (of 200)")
         ax.set_title(
             "HD 127195: Monte Carlo classification (black bars: Note's count ± 3 binomial σ)",
