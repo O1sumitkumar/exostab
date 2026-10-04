@@ -68,14 +68,16 @@ def test_non_finite_numbers_in_json(small_result) -> None:  # type: ignore[no-un
 
 
 def test_infinite_amd_beta_in_report_json() -> None:
-    from exostab.data import load_system
-
-    # GJ 876 c / b: the resonances overlap even on circular orbits, so β is infinite
-    res = check_system(load_system("GJ 876"), CheckSettings(orbits=50, draws=0, jobs=1, ias15_check=False))
+    # Two 10 Earth-mass planets with a period ratio of 1.1: inside the domain of Petit et al. (2017), and their
+    # resonances overlap even on circular orbits, so β is infinite. (GJ 876 no longer serves: its pairs lie
+    # outside that domain, β uses the collision criterion and is finite; no snapshot system has an infinite β.)
+    res = check_system(
+        two_planet_system(period_ratio=1.1), CheckSettings(orbits=50, draws=0, jobs=1, ias15_check=False)
+    )
     pairs = json.loads(res.report.to_json())["indicators"]["amd"]["details"]["pairs"]
     betas = [p["beta"] for p in pairs]
     assert "inf" in betas and None not in betas
-    assert all(p["circular_overlap"] for p in pairs if p["beta"] == "inf")
+    assert all(p["circular_overlap"] and p["outside_domain"] is None for p in pairs if p["beta"] == "inf")
 
 
 def test_shipped_schema_is_up_to_date() -> None:
