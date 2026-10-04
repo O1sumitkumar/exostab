@@ -40,6 +40,8 @@ def test_catalog_page(small_catalog: Path, tmp_path: Path, monkeypatch: pytest.M
     assert 'id="catalog-table"' in text and text.count("<tr>") == 1 + 4
     assert "data/catalog.csv" in text and "Overall verdicts" in text
     assert "verdict-" in text
+    # beta < 1 alone is not AMD-stable: beta_S and the domain of the critical AMD also count
+    assert "below 1 is AMD-stable" not in text and "β_S < 1" in text
     placeholder = page.render(None)
     assert "No catalog has been published yet" in placeholder and "data/catalog.csv" not in placeholder
     monkeypatch.setattr("sys.argv", ["catalog_page.py", str(small_catalog)])
