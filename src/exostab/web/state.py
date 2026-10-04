@@ -14,12 +14,18 @@ from typing import Any
 
 from ..budget import PRESETS
 from ..models import CompletionFlag, MassKind, Provenance, System, Value
+from ..sampling import E_MAX
 
 BUDGET_MIN, BUDGET_MAX, BUDGET_DEFAULT = 5, 120, 10
 MASS_FACTORS = (0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0)
 SEED_MAX = 2**31 - 1  # range of the seed widget
 # A link can ask for at most the longest run that a time budget can choose (the last preset in budget.py).
 ORBITS_MAX, DRAWS_MAX = PRESETS[-1]
+# Smallest values the parameter table accepts (app.py), also required of the edits in a link.
+PERIOD_MIN_DAYS, MASS_MIN_EARTH = 1e-3, 1e-6
+# Largest what-if period ratio a link may carry. The slider reaches 1.2 times the table's ratio (at least 10),
+# and the widest adjacent pair in the archive is about 1.1e4 apart in period (GJ 2030, 2026-09-28 cache).
+PERIOD_RATIO_MAX = 1e5
 
 
 @dataclass
@@ -224,12 +230,33 @@ def _number(v: Any) -> float:
     return float(v)
 
 
+# What the table's columns accept (app.py): bounds of each editable value in a link.
+_EDIT_RANGES = {
+    "period_days": (PERIOD_MIN_DAYS, math.inf),
+    "mass_earth": (MASS_MIN_EARTH, math.inf),
+    "eccentricity": (0.0, E_MAX),
+    "omega_deg": (-math.inf, math.inf),
+}
+
+
+def _edit(column: str, v: Any) -> float | None:
+    """One table edit from a decoded link: None (a cleared cell) or a number the table accepts."""
+    if v is None:
+        return None
+    x = _number(v)
+    lo, hi = _EDIT_RANGES[column]
+    if not lo <= x <= hi:
+        raise ValueError(f"{column} = {x:g} is outside the table's range")
+    return x
+
+
 def decode_state(params: dict[str, str]) -> AppState:
     """AppState from query parameters; invalid values fall back to the defaults.
 
     Links come from anywhere, so every value is checked against what the app itself can produce: a finite
-    budget (clamped to the slider's range), a seed in the seed widget's range, finite table edits, a what-if
-    within the sliders' choices, and a run length no longer than the longest preset a budget can choose.
+    budget (clamped to the slider's range), a seed in the seed widget's range, table edits within the
+    columns' ranges (an eccentricity at most ``E_MAX``), a what-if within the sliders' choices (a period ratio
+    at most ``PERIOD_RATIO_MAX``), and a run length no longer than the longest preset a budget can choose.
     """
     s = AppState()
     s.system = params.get("system", s.system)[:200]
@@ -249,9 +276,7 @@ def decode_state(params: dict[str, str]) -> AppState:
         if "edits" in params:
             raw = _unb64(params["edits"])
             s.edits = {
-                str(p): {
-                    str(c): (None if v is None else _number(v)) for c, v in cols.items() if c in EDITABLE
-                }
+                str(p): {str(c): _edit(c, v) for c, v in cols.items() if c in EDITABLE}
                 for p, cols in raw.items()
             }
         if "whatif" in params:
@@ -261,8 +286,8 @@ def decode_state(params: dict[str, str]) -> AppState:
             ratio = None if raw.get("period_ratio") is None else _number(raw["period_ratio"])
             if (
                 factor not in MASS_FACTORS
-                or not (e is None or 0 <= e < 1)
-                or not (ratio is None or ratio > 1)
+                or not (e is None or 0 <= e <= E_MAX)
+                or not (ratio is None or 1 < ratio <= PERIOD_RATIO_MAX)
             ):
                 raise ValueError("what-if adjustment out of range")
             s.whatif = WhatIf(

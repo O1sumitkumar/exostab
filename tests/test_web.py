@@ -131,6 +131,13 @@ def test_decode_rejects_garbage() -> None:
         {"whatif": _b64({"planet": "Test b", "mass_factor": 4.0})},  # not a choice of the slider
         {"whatif": _b64({"planet": "Test b", "eccentricity": 1.5})},
         {"whatif": _b64({"planet": "Test c", "period_ratio": 0.5})},
+        # beyond what the widgets produce: e above E_MAX = 0.95 (the slider and the e column stop there, and
+        # the analysis refuses it), a period ratio of 1e300, table values below the columns' minimums
+        {"whatif": _b64({"planet": "Test b", "eccentricity": 0.97})},
+        {"whatif": _b64({"planet": "Test c", "period_ratio": 1e300})},
+        {"edits": _b64({"Test b": {"eccentricity": 0.97}})},
+        {"edits": _b64({"Test b": {"period_days": 1e-4}})},
+        {"edits": _b64({"Test b": {"mass_earth": 1e-7}})},
         {"orbits": "1e7", "draws": "500"},  # days of CPU time on a public server
         {"orbits": "1e5", "draws": "101"},
         {"orbits": "1.5e5", "draws": "10"},
@@ -155,6 +162,38 @@ def test_app_survives_crafted_links(params: dict[str, str]) -> None:
     at.query_params.update({"system": "Kepler-36", "source": "snapshot", **params})
     at.run()
     assert not at.exception, at.exception
+
+
+RUN_NOW = {"system": "Kepler-36", "source": "snapshot", "orbits": "100", "draws": "1", "run": "1"}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"whatif": _b64({"planet": "Kepler-36 b", "eccentricity": 0.97})},
+        {"edits": _b64({"Kepler-36 b": {"eccentricity": 0.97}})},
+        {"whatif": _b64({"planet": "Kepler-36 c", "period_ratio": 1e300})},
+    ],
+)
+def test_app_runs_crafted_links_without_a_traceback(params: dict[str, str]) -> None:
+    # These links ran on cc063eb (the sliders clamped them, the analysis capped e) and showed a traceback
+    # after be59b02 and 27441ad: "eccentricity 0.97 is above 0.95", OverflowError in REBOUND.
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.query_params.update({**RUN_NOW, **params})
+    at.run()
+    assert not at.exception, at.exception
+    assert not at.error, [e.value for e in at.error]
+    assert any("Overall:" in m.value for m in at.markdown)  # the link's invalid part was dropped
+
+
+def test_app_reports_parameters_the_analysis_cannot_use() -> None:
+    # A period the table accepts but REBOUND cannot use (1e300 d overflows): an error message, not a traceback.
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.query_params.update({**RUN_NOW, "edits": _b64({"Kepler-36 c": {"period_days": 1e300}})})
+    at.run()
+    assert not at.exception, at.exception
+    assert any("cannot be checked" in e.value for e in at.error)
+    assert at.query_params.get("run") != "1"  # the automatic run is switched off
 
 
 def test_input_hash_changes_with_any_input() -> None:

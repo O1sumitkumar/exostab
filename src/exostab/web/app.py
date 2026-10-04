@@ -37,6 +37,8 @@ from .state import (
     BUDGET_MAX,
     BUDGET_MIN,
     MASS_FACTORS,
+    MASS_MIN_EARTH,
+    PERIOD_MIN_DAYS,
     AppState,
     WhatIf,
     apply_changes,
@@ -242,8 +244,10 @@ def _parameters(state: AppState, system: System) -> System:
         disabled=["planet", "mass_kind", "phase"],
         column_config={
             "planet": st.column_config.TextColumn("Planet"),
-            "period_days": st.column_config.NumberColumn("P (days)", min_value=1e-3, format="%.6g"),
-            "mass_earth": st.column_config.NumberColumn("Mass (M⊕)", min_value=1e-6, format="%.4g"),
+            "period_days": st.column_config.NumberColumn(
+                "P (days)", min_value=PERIOD_MIN_DAYS, format="%.6g"
+            ),
+            "mass_earth": st.column_config.NumberColumn("Mass (M⊕)", min_value=MASS_MIN_EARTH, format="%.4g"),
             "mass_kind": st.column_config.TextColumn("Mass kind"),
             "eccentricity": st.column_config.NumberColumn("e", min_value=0.0, max_value=E_MAX, format="%.4g"),
             "omega_deg": st.column_config.NumberColumn("ω (deg)", format="%.4g"),
@@ -424,6 +428,11 @@ def main() -> None:
             st.error(
                 f"SPOCK could not be run, so it has been switched off: {exc}. Press Run to check without it."
             )
+        except (ValueError, ArithmeticError) as exc:
+            # parameters the analysis refuses or cannot integrate (for example extreme values typed into the
+            # table); not cached either, so the automatic run is switched off
+            state.run = False
+            st.error(f"These parameters cannot be checked: {exc}")
         else:
             if note:
                 st.warning(note)
