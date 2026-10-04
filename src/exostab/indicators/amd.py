@@ -52,11 +52,15 @@ Mean-motion-resonance overlap (Petit, Laskar & Boué 2017)
     eps > eps_lim = 8.20e-3", for which alpha_cir lies below the 2:1 resonance (Sect. 5.1). For
     eps > 3.1e-3, alpha_R is below 2^(-2/3) = 0.630, so the switching rule alone would apply C_MMR to
     pairs wide of the 2:1 resonance. exostab therefore uses C_MMR only for eps <= eps_lim and
-    alpha > max(alpha_R, 2^(-2/3)), and C_c otherwise. A pair with eps > eps_lim, or with
-    alpha_R < alpha <= 2^(-2/3), lies outside the domain Petit et al. state, and no published AMD
-    criterion accounts for resonance overlap there: its beta is computed with C_c and reported, but the
-    system is never called AMD-stable (at most marginal). eps_lim = 8.11e-3 is the exact root of
-    alpha_cir(eps) = 2^(-2/3); the paper's 8.20e-3 follows from the rounded 1.46 and 0.63.
+    alpha > max(alpha_R, 2^(-2/3)), and C_c otherwise. A pair with alpha <= alpha_R is in the collision
+    regime whatever its eps: Petit et al.'s switching rule itself gives C_c there, the criterion with which
+    Laskar & Petit (2017) classified their catalogue, pairs with eps > eps_lim included (the strongly
+    AMD-stable systems of their Fig. 5 include HD 147018, HD 168443, HD 169830 and nu Oph, whose wide giant
+    pairs have eps > eps_lim). A pair with alpha > alpha_R and either eps > eps_lim or alpha <= 2^(-2/3)
+    lies outside the domain Petit et al. state, and no published AMD criterion accounts for resonance
+    overlap there: its beta is computed with C_c and reported, but the system is never called AMD-stable
+    (at most marginal). eps_lim = 8.11e-3 is the exact root of alpha_cir(eps) = 2^(-2/3); the paper's
+    8.20e-3 follows from the rounded 1.46 and 0.63.
 
 Hill stability in the AMD framework (Petit, Laskar & Boué 2018)
     For two planets (eps = (m + m') / M_*), the pair is Hill stable if its relative AMD C / Lambda' is below
@@ -168,13 +172,20 @@ def critical_amd(alpha: float, gamma: float, eps: float) -> tuple[float, str]:
 def outside_domain(alpha: float, eps: float) -> str | None:
     """Why a pair lies outside the domain of Petit et al. (2017), or None if it does not.
 
-    "eps_above_limit": eps > eps_lim, a pair Petit et al. excluded from their sample;
-    "wide_of_2_1": alpha_R < alpha <= 2^(-2/3), where their switching rule would use first-order resonance
-    overlap but their text says it makes no sense (only possible for 3.1e-3 < eps <= eps_lim).
+    Only pairs with alpha > alpha_R, where their switching rule would use first-order resonance overlap, can
+    lie outside it; for alpha <= alpha_R the rule gives the collision criterion of Laskar & Petit (2017) for
+    any eps.
+
+    "eps_above_limit": eps > eps_lim, so alpha_cir lies wide of the 2:1 resonance and Petit et al. excluded
+    such pairs from their study of resonance overlap;
+    "wide_of_2_1": alpha <= 2^(-2/3), where their text says first-order resonance overlap makes no sense
+    (only possible for 3.1e-3 < eps <= eps_lim).
     """
+    if alpha <= alpha_resonance_switch(eps):
+        return None
     if eps > EPS_LIM:
         return "eps_above_limit"
-    if alpha_resonance_switch(eps) < alpha <= ALPHA_2_1:
+    if alpha <= ALPHA_2_1:
         return "wide_of_2_1"
     return None
 
@@ -321,9 +332,16 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
     heavy = [p["pair"] for p in pairs if p["outside_domain"] == "eps_above_limit"]
     if heavy:
         notes.append(
-            f"(m + m')/M★ is above ε_lim = {EPS_LIM * 1e3:.2f}e-3 for: {', '.join(heavy)}. Petit et al. (2017) "
-            "excluded such pairs, whose circular-orbit resonance-overlap limit lies wide of the 2:1 resonance; "
-            "β uses the collision criterion, and the AMD verdict is at most marginal."
+            f"(m + m')/M★ is above ε_lim = {EPS_LIM * 1e3:.2f}e-3 and α > α_R for: {', '.join(heavy)}. Petit et "
+            "al. (2017) excluded such pairs, whose circular-orbit resonance-overlap limit lies wide of the 2:1 "
+            "resonance; β uses the collision criterion, and the AMD verdict is at most marginal."
+        )
+    wide_heavy = [p["pair"] for p in pairs if p["epsilon"] > EPS_LIM and p["outside_domain"] is None]
+    if wide_heavy:
+        notes.append(
+            f"(m + m')/M★ is above ε_lim = {EPS_LIM * 1e3:.2f}e-3 for: {', '.join(wide_heavy)}, but α ≤ α_R, "
+            "where Petit et al. (2017) use the collision criterion of Laskar & Petit (2017), as for any pair far "
+            "from first-order resonance overlap."
         )
     wide = [p["pair"] for p in pairs if p["outside_domain"] == "wide_of_2_1"]
     if wide:

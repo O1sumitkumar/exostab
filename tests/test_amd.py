@@ -117,9 +117,13 @@ def test_mmr_overlap_restricted_to_petit_2017_domain() -> None:
     assert amd.outside_domain(0.60, eps) == "wide_of_2_1"
     assert amd.critical_amd(0.70, 1.0, eps)[1] == "mmr_overlap" and amd.outside_domain(0.70, eps) is None
     assert amd.critical_amd(0.40, 1.0, eps)[1] == "collision" and amd.outside_domain(0.40, eps) is None
-    # eps = 1e-2 > eps_lim: no resonance branch at all, every pair flagged
+    # eps = 1e-2 > eps_lim: no resonance branch at all; pairs with alpha > alpha_R = 0.50, where the switching
+    # rule would use resonance overlap, are flagged, and wider pairs are in the collision regime
     for alpha in (0.30, 0.55, 0.62, 0.80):
         assert amd.critical_amd(alpha, 1.0, 1e-2)[1] == "collision"
+    assert amd.alpha_resonance_switch(1e-2) == pytest.approx(0.50, abs=5e-3)
+    assert amd.outside_domain(0.30, 1e-2) is None
+    for alpha in (0.55, 0.62, 0.80):
         assert amd.outside_domain(alpha, 1e-2) == "eps_above_limit"
     # small eps: the domain covers every alpha
     assert all(amd.outside_domain(alpha, 1e-4) is None for alpha in (0.1, 0.5, 0.63, 0.9))
@@ -147,11 +151,39 @@ def test_pairs_outside_the_domain_are_never_amd_stable() -> None:
     p = amd.analyse(far)["pairs"][0]
     assert p["critical_branch"] == "collision" and p["beta"] < 1
     assert amd.classify(far) is Verdict.MARGINAL
-    # a light inner planet next to a heavy pair: the summary keeps beta_S
-    ups = real_of([1e-8, 5e-3, 5e-3], [1.0, 8.0, 40.0], [0.0, 0.1, 0.0])
+    # a light inner planet next to a heavy pair (period ratio 1.75, alpha > alpha_R): the summary keeps beta_S
+    ups = real_of([1e-8, 5e-3, 5e-3], [1.0, 8.0, 14.0], [0.0, 0.1, 0.0])
     r = amd.evaluate(ups, [])
     assert [p["outside_domain"] for p in r.details["pairs"]] == [None, "eps_above_limit"]
     assert "outside the domain" in r.summary and "β_S = 1e+04" in r.summary
+
+
+def test_wide_heavy_pairs_use_the_collision_criterion_of_laskar_petit_2017() -> None:
+    """Pairs with eps > eps_lim but alpha <= alpha_R keep the AMD-stable verdict (Petit et al. 2017, Sect. 4.2).
+
+    Laskar & Petit (2017, Fig. 5) list HD 168443, HD 147018, HD 169830 and nu Oph as strongly AMD-stable with
+    beta = 2 beta_p; exostab called all four AMD "marginal" when every pair with eps > eps_lim was capped.
+    """
+    # HD 168443 b / c: 7.7 and 17.2 Jupiter masses (in M_sun) around a 1 M_sun star, period ratio 30.4
+    hd168443 = real_of([7.35e-3, 1.64e-2], [1.0, 30.4], [0.53, 0.21])
+    p = amd.analyse(hd168443)["pairs"][0]
+    assert (
+        p["epsilon"] > amd.EPS_LIM and p["alpha"] < amd.alpha_resonance_switch(p["epsilon"]) < amd.ALPHA_2_1
+    )
+    assert p["critical_branch"] == "collision" and p["outside_domain"] is None
+    assert p["beta"] == pytest.approx(0.184, abs=1e-3)
+    assert amd.classify(hd168443) is Verdict.STABLE
+    r = amd.evaluate(hd168443, [])
+    assert r.verdict is Verdict.STABLE and r.summary.startswith("AMD-stable")
+    assert any("ε_lim" in n and "α ≤ α_R" in n for n in r.notes)
+    # nu Oph-like pair (eps = 0.0171, period ratio 6.0): alpha = 0.30 < alpha_R = 0.43
+    nu_oph = real_of([8.55e-3, 8.55e-3], [1.0, 6.0], [0.12, 0.18])
+    assert amd.analyse(nu_oph)["pairs"][0]["outside_domain"] is None
+    assert amd.classify(nu_oph) is Verdict.STABLE
+    # the same masses at period ratio 1.75 (alpha = 0.69 > alpha_R) stay outside the domain: at most marginal
+    close = real_of([8.55e-3, 8.55e-3], [1.0, 1.75], [0.0, 0.0])
+    assert amd.analyse(close)["pairs"][0]["outside_domain"] == "eps_above_limit"
+    assert amd.classify(close) is Verdict.MARGINAL
 
 
 @given(e=st.floats(0, 0.4), de=st.floats(0.001, 0.3))
