@@ -34,8 +34,8 @@ jobs:
           path: site/
 
   deploy:
-    # Enable after turning on GitHub Pages with "Source: GitHub Actions" and setting the repository variable
-    # DEPLOY_DOCS=true (see README / final report for the steps).
+    # Runs when GitHub Pages uses "Source: GitHub Actions" and the repository variable DEPLOY_DOCS is "true"
+    # (both set; RELEASING.md).
     if: vars.DEPLOY_DOCS == 'true'
     needs: build
     runs-on: ubuntu-latest

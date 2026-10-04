@@ -47,10 +47,17 @@ jobs:
       - name: Build the catalog
         env:
           MPLBACKEND: Agg
+          LIMIT: ${{ inputs.limit || '0' }}
         run: |
+          # The full log goes to catalog/build.log (uploaded with the catalog); the step keeps the build's exit
+          # status, so a failed build stops here instead of at the copy below.
+          mkdir -p catalog
+          status=0
           exostab catalog build --refresh --out catalog \
             --orbits "$ORBITS" --draws "$DRAWS" --seed "$SEED" --max-seconds "$MAX_SECONDS" \
-            --limit "${{ inputs.limit || '0' }}" | tail -n 5
+            --limit "$LIMIT" > catalog/build.log 2>&1 || status=$?
+          tail -n 20 catalog/build.log
+          exit "$status"
       - name: Publish on the branch catalog-data
         run: |
           day=$(date -u +%Y-%m-%d)
@@ -72,6 +79,7 @@ jobs:
           git -C publish commit -m "Catalog of $day" || echo "nothing changed"
           git -C publish push origin catalog-data
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}  # keep build.log when the build fails
         with:
           name: catalog
           path: catalog/

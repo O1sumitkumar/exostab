@@ -1,9 +1,12 @@
-"""Scripts used by the workflows: catalog page, release notes, Zenodo upload, snapshot builder."""
+"""Scripts: catalog page, release notes, Zenodo upload, snapshot builder, SPOCK environment."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -159,3 +162,55 @@ def test_make_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(snap, "SYSTEMS", ["Not-A-System"])
     with pytest.raises(SystemExit, match="not in the archive"):
         snap.main()
+
+
+FAKE_UV = """#!/usr/bin/env bash
+# Records its arguments; like uv 0.12, "uv venv" refuses an existing folder without --clear or UV_VENV_CLEAR=1.
+echo "$*" >> "$UV_LOG"
+if [[ "$1" == venv ]]; then
+  target="${@: -1}"
+  if [[ -e "$target" && "$*" != *--clear* && "${UV_VENV_CLEAR:-}" != 1 ]]; then
+    echo "error: A virtual environment already exists at: $target" >&2
+    exit 2
+  fi
+  rm -rf "$target" && mkdir -p "$target/bin" && touch "$target/pyvenv.cfg"
+fi
+"""
+
+
+def run_spock_env(tmp_path: Path, target: Path) -> subprocess.CompletedProcess[str]:
+    """scripts/make_spock_env.sh with a fake uv first on PATH (nothing is downloaded or built)."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    (bindir / "uv").write_text(FAKE_UV)
+    (bindir / "uv").chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "UV_LOG": str(tmp_path / "uv.log"),
+    }
+    script = ROOT / "scripts" / "make_spock_env.sh"
+    return subprocess.run(
+        ["bash", str(script), str(target)], env=env, capture_output=True, text=True, check=False
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+def test_spock_env_script_can_be_run_again(tmp_path: Path) -> None:
+    target = tmp_path / "spock-env"
+    for _ in range(2):  # a second run (after a failed source build, or to update) rebuilds the environment
+        r = run_spock_env(tmp_path, target)
+        assert r.returncode == 0, r.stderr
+    calls = [line.split()[:2] for line in (tmp_path / "uv.log").read_text().splitlines()]
+    assert calls == [["venv", "--python"], ["pip", "install"]] * 2
+    assert f"EXOSTAB_SPOCK_PYTHON={target}/bin/python" in r.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+def test_spock_env_script_leaves_other_folders_alone(tmp_path: Path) -> None:
+    target = tmp_path / "notes"
+    target.mkdir()
+    (target / "keep.txt").write_text("not a virtual environment")
+    r = run_spock_env(tmp_path, target)
+    assert r.returncode == 1 and "is not a virtual environment" in r.stderr
+    assert (target / "keep.txt").exists() and not (tmp_path / "uv.log").exists()

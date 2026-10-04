@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.21"]
+requires = ["hatchling>=1.27"]  # 1.27: first release with full PEP 639 license metadata
 build-backend = "hatchling.build"
 
 [project]
@@ -33,8 +33,8 @@ dependencies = [
     "numpy>=1.24",
     "astropy>=5.3",
     "astroquery>=0.4.7",
-    "pydantic>=2.5,<3",
-    "typer>=0.12",
+    "pydantic>=2.11,<3",  # older pydantic writes a different JSON schema than the shipped report.schema.json
+    "typer>=0.16",  # older typer fails on `str | None` options or with click >= 8.2 (tested 2026-10-03)
     "rich>=13.0",
     "matplotlib>=3.7",
     "platformdirs>=3.0",
@@ -64,7 +64,7 @@ exostab = "exostab.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/mimitoz62/exostab"
-Documentation = "https://github.com/mimitoz62/exostab#readme"
+Documentation = "https://mimitoz62.github.io/exostab/"
 Issues = "https://github.com/mimitoz62/exostab/issues"
 Changelog = "https://github.com/mimitoz62/exostab/blob/main/CHANGELOG.md"
 
@@ -75,7 +75,17 @@ path = "src/exostab/__init__.py"
 packages = ["src/exostab"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/exostab", "tests", "examples", "README.md", "LICENSE", "CITATION.cff", "CHANGELOG.md"]
+include = [
+    "src/exostab",
+    "tests",
+    "examples",
+    "scripts",  # tests/test_scripts.py loads them
+    "streamlit_app.py",  # tests/test_web.py runs it
+    "README.md",
+    "LICENSE",
+    "CITATION.cff",
+    "CHANGELOG.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
