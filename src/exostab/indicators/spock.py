@@ -15,13 +15,17 @@ but never unstable on its own (only direct integration can). An estimate of exac
 integration already went unstable.
 
 Domain. SPOCK was trained on compact three-planet systems with planet-to-star mass ratios of 1e-7 to 1e-4 and
-adjacent separations sampled "in the range from [0,30] R_H", in SPOCK's own mutual Hill radius
-"R_H = a_i ((m_i+m_{i+1})/M_star)^{1/3}, where a_i is the semimajor axis of the inner planet in the pair"
-(Tamayo et al. 2020, Eq. 1). That radius has no factor 3 and uses the inner semi-major axis, unlike the
-Chambers et al. (1996) radius of the Hill indicator, so the two spacings differ by a factor that depends on the
-masses and the spacing (30 of SPOCK's radii are 27.3 of the Hill indicator's for two planets of 3e-5 M_* each,
-and 36.4 for 1e-6). The report warns when a mass ratio lies outside the training range or when a spacing, measured in SPOCK's
-convention, exceeds 30.
+adjacent separations of up to 30 mutual Hill radii. Tamayo et al. (2020, Eq. 1) print the mutual Hill radius as
+"R_H = a_i ((m_i+m_{i+1})/M_star)^{1/3}, where a_i is the semimajor axis of the inner planet in the pair", but
+the code that generated SPOCK's training set (dtamayo/spock, run_integrations/runfunctions.py) has a factor 3:
+``run_random`` sets ``a2 = a1 + beta1*hill12`` with ``hill12 = a1*((M1+M2)/3.)**(1./3.)`` and ``beta1`` drawn
+up to ``betamax = 30``, and ``get_resonant`` uses ``eH = ((m1+m2)/3.)**(1./3.)`` with ``maxHillradii = 30``.
+The paper's lower limit of 3.5 radii for its resonant pairs, "the Hill stability limit" of Gladman (1993),
+matches 2 sqrt(3) = 3.46 only with the factor 3 (2.40 without it). exostab therefore measures the spacing in the
+training code's radius, R_H = a_i ((m_i + m_{i+1}) / (3 M_*))^(1/3). It uses the inner semi-major axis, unlike
+the Chambers et al. (1996) radius of the Hill indicator: 30 of these radii are 21.3 of the Hill indicator's for
+two planets of 3e-5 M_* each, and 26.5 for 1e-6. The report warns when a mass ratio lies outside the training
+range or when a spacing, in this radius, exceeds 30.
 """
 
 from __future__ import annotations
@@ -37,7 +41,7 @@ from . import DrawStats, IndicatorResult, Verdict, combine
 
 THRESHOLD = 0.34  # Tamayo et al. (2020): 10% false-positive rate on the resonant hold-out set
 MASS_RATIO_RANGE = (1e-7, 1e-4)
-MAX_SPACING = 30.0  # in SPOCK's mutual Hill radii (Tamayo et al. 2020, Eq. 1), see spock_spacings()
+MAX_SPACING = 30.0  # in the mutual Hill radii of SPOCK's training code, see spock_spacings()
 WORKER = Path(__file__).with_name("spock_worker.py")
 REFERENCES = ["tamayo2020"]
 
@@ -89,17 +93,18 @@ def classify(p: float) -> Verdict:
 
 
 def spock_spacings(real: Realization) -> list[tuple[str, float]]:
-    """Adjacent spacings (a_{i+1} - a_i) / R_H with SPOCK's R_H = a_i ((m_i + m_{i+1}) / M_*)^(1/3).
+    """Adjacent spacings (a_{i+1} - a_i) / R_H with R_H = a_i ((m_i + m_{i+1}) / (3 M_*))^(1/3).
 
-    This is Tamayo et al. (2020, Eq. 1), the convention of SPOCK's training set, not the mutual Hill radius
-    ((m_i + m_{i+1}) / (3 M_*))^(1/3) (a_i + a_{i+1}) / 2 of the Hill indicator.
+    This is the radius of SPOCK's training-set generator (run_integrations/runfunctions.py, ``run_random`` and
+    ``get_resonant``), which defines the training range; Tamayo et al. (2020) print their Eq. 1 without the 3.
+    It is not the mutual Hill radius ((m_i + m_{i+1}) / (3 M_*))^(1/3) (a_i + a_{i+1}) / 2 of the Hill indicator.
     """
     a = real.semi_major_axes()
     out = []
     for k in range(len(real.bodies) - 1):
         b1, b2 = real.bodies[k], real.bodies[k + 1]
         a1, a2 = float(a[k]), float(a[k + 1])
-        r_hill = a1 * ((b1.m + b2.m) / real.m_star) ** (1 / 3)
+        r_hill = a1 * ((b1.m + b2.m) / (3 * real.m_star)) ** (1 / 3)
         out.append((f"{b1.name} / {b2.name}", (a2 - a1) / r_hill))
     return out
 
@@ -115,10 +120,8 @@ def domain_warnings(real: Realization) -> list[str]:
     wide = [f"{pair} ({d:.1f})" for pair, d in spock_spacings(real) if d > MAX_SPACING]
     if wide:
         notes.append(
-            f"Separated by more than {MAX_SPACING:g} mutual Hill radii in SPOCK's convention "
-            "(R_H = a_i ((m_i + m_i+1)/M★)^(1/3), Tamayo et al. 2020), outside its training range: "
-            + ", ".join(wide)
-            + "."
+            f"Separated by more than {MAX_SPACING:g} mutual Hill radii as SPOCK's training set measures them "
+            "(R_H = a_i ((m_i + m_i+1)/(3 M★))^(1/3)), outside its training range: " + ", ".join(wide) + "."
         )
     return notes
 
