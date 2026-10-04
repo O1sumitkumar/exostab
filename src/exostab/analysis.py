@@ -290,7 +290,8 @@ def check_system(system: System, settings: CheckSettings, *, command: str | None
     reals = realizations(system, settings.draws, settings.seed, settings.inclination_prior)
     nominal, draws = reals[0], reals[1:]
     hill = hill_indicator.evaluate(nominal, draws)
-    amd = amd_indicator.evaluate(nominal, draws)
+    assumed_e = [p.name for p in system.planets if p.eccentricity.provenance is Provenance.ASSUMED]
+    amd = amd_indicator.evaluate(nominal, draws, assumed_eccentricities=assumed_e)
     nb_settings = nbody_indicator.NBodySettings(
         orbits=settings.orbits,
         dt_fraction=settings.dt_fraction,

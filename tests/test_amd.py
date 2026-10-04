@@ -4,8 +4,11 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
+from conftest import V, two_planet_system
 from exostab._numerics import bisect
+from exostab.analysis import CheckSettings, check_system
 from exostab.indicators import Verdict, amd
+from exostab.models import Provenance
 from exostab.sampling import Body, Realization
 
 alphas = st.floats(0.05, 0.98)
@@ -270,3 +273,32 @@ def test_evaluate_texts() -> None:
     )
     assert r.nominal_verdict is Verdict.STABLE and r.verdict is Verdict.MARGINAL
     assert any("draws disagree" in n for n in r.notes)
+
+
+def test_assumed_eccentricities_are_disclosed() -> None:
+    """An eccentricity that was not measured is 0 in every run, so beta = 0 says nothing about the real orbits."""
+    circ = real_of([3e-5, 3e-5], [1.0, 2.2], [0.0, 0.0])
+    r = amd.evaluate(circ, [], assumed_eccentricities=["p0", "p1"])
+    assert r.verdict is Verdict.STABLE  # the arithmetic is unchanged; what changes is the disclosure
+    assert r.summary.startswith("AMD-stable only because no eccentricity is measured")
+    assert "collisions are excluded" not in r.summary
+    assert any(n.startswith("Eccentricity assumed, not measured") and "p0, p1" in n for n in r.notes)
+    # one measured eccentricity: the usual summary, and a note on the other planet
+    part = real_of([3e-5, 3e-5], [1.0, 2.2], [0.0, 0.01])
+    r = amd.evaluate(part, [], assumed_eccentricities=["p0"])
+    assert r.summary.startswith("AMD-stable: largest β")
+    assert any("for: p0. This planet adds no AMD, so β and β_S are lower limits" in n for n in r.notes)
+    # measured eccentricities: no such note
+    assert not any("assumed, not measured" in n for n in amd.evaluate(part, []).notes)
+
+
+def test_check_system_passes_the_assumed_eccentricities() -> None:
+    s = two_planet_system()
+    planets = tuple(
+        p.model_copy(update={"eccentricity": V(0.0, provenance=Provenance.ASSUMED)}) for p in s.planets
+    )
+    s = s.model_copy(update={"planets": planets})
+    res = check_system(s, CheckSettings(orbits=100, draws=2, jobs=1, n_samples=5, ias15_check=False))
+    a = res.report.indicators["amd"]
+    assert a.verdict is Verdict.STABLE and "no eccentricity is measured" in a.summary
+    assert any("Test b, Test c" in n for n in a.notes)

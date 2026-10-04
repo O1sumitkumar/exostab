@@ -78,11 +78,17 @@ Verdicts
       the equipartition assumption is never used to strengthen a claim of instability;
     * marginal: anything else. AMD instability means only that collisions are not excluded by AMD
       conservation; the Solar System itself is AMD-unstable (Laskar & Petit 2017).
+
+Assumed eccentricities
+    A planet whose eccentricity was not measured gets e = 0 in every run (``Provenance.ASSUMED``). It then adds
+    no AMD, so beta and beta_S are lower limits for any real eccentricity. The notes name such planets, and if
+    every eccentricity is assumed the summary says that the AMD-stable verdict rests on that assumption alone.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from typing import Any
 
 from .._numerics import bisect
@@ -254,7 +260,14 @@ def classify(real: Realization) -> Verdict:
     return Verdict.MARGINAL
 
 
-def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
+def evaluate(
+    nominal: Realization, draws: list[Realization], *, assumed_eccentricities: Sequence[str] = ()
+) -> IndicatorResult:
+    """AMD verdict for the nominal parameters and the draws.
+
+    ``assumed_eccentricities`` names the planets whose eccentricity is assumed, not measured (see the module
+    docstring).
+    """
     info = analyse(nominal)
     v_nom = classify(nominal)
     v_draws = [classify(r) for r in draws]
@@ -263,7 +276,14 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
     worst = max(pairs, key=lambda p: p["beta"])
     amd_stable = all(p["beta"] < 1 for p in pairs)
     off = [p["pair"] for p in pairs if p["outside_domain"]]
-    if v_nom is Verdict.STABLE:
+    names = [b.name for b in nominal.bodies]
+    assumed = [n for n in names if n in set(assumed_eccentricities)]
+    if v_nom is Verdict.STABLE and len(assumed) == len(names) and worst["beta"] == 0:
+        summary = (
+            "AMD-stable only because no eccentricity is measured: every planet is assumed to be on a circular "
+            "orbit, so the AMD and every β are 0. The test says nothing about the real eccentricities."
+        )
+    elif v_nom is Verdict.STABLE:
         summary = (
             f"AMD-stable: largest β = {_b(worst['beta'])} ({worst['pair']}), so collisions are excluded "
             "in the secular approximation, provided the mutual inclinations carry no more AMD than the "
@@ -312,6 +332,12 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
     notes = []
     if verdict is not v_nom and v_nom is not Verdict.INCONCLUSIVE:
         notes.append(f"The nominal parameters give '{v_nom.value}', but the draws disagree.")
+    if assumed:
+        notes.append(
+            f"Eccentricity assumed, not measured (e = 0 in every run), for: {', '.join(assumed)}. "
+            f"{'These planets add' if len(assumed) > 1 else 'This planet adds'} no AMD, so β and β_S are lower "
+            "limits for any real eccentricities, and an AMD-stable verdict holds only under that assumption."
+        )
     notes.append(
         "β, β_S and β_H assume that the unknown mutual inclinations carry as much AMD as the eccentricities "
         "(twice the coplanar AMD; Laskar & Petit 2017, Petit et al. 2017). For exactly coplanar orbits they "
