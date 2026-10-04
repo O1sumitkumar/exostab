@@ -21,15 +21,32 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 def test_citation_names_the_package_version() -> None:
-    # GitHub's "Cite this repository" and Zenodo read CITATION.cff. A release must cite itself (release.yml
-    # checks the same for the tag); a development version may still cite the release before it.
+    # GitHub's "Cite this repository" and Zenodo read CITATION.cff. A release must cite itself with its release
+    # date (release.yml checks the same for the tag). A development version may still cite the release before
+    # it, with that release's date, or cite itself without a date: it has not been released.
     cff = yaml.safe_load((ROOT / "CITATION.cff").read_text(encoding="utf-8"))
     cited, version = Version(str(cff["version"])), Version(__version__)
-    if version.is_prerelease:  # for example 1.1.0.dev0
-        assert cited <= version
+    if version.is_prerelease and cited == version:  # for example 1.1.0.dev0
+        assert "date-released" not in cff
+        return
+    if version.is_prerelease:
+        assert cited < version
     else:
         assert cited == version
     datetime.date.fromisoformat(str(cff["date-released"]))
+
+
+def test_a_release_version_has_a_changelog_section() -> None:
+    # release.yml refuses a tag whose version has no "## [X.Y.Z]" section in CHANGELOG.md. Checked on every
+    # commit, so that main never claims a release version (with a release date in CITATION.cff) before its
+    # changelog section exists; a development version collects its entries under "Unreleased".
+    headings = [
+        line
+        for line in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+        if line.startswith("## ")
+    ]
+    wanted = "[Unreleased]" if Version(__version__).is_prerelease else f"[{__version__}]"
+    assert any(wanted in heading for heading in headings)
 
 
 def pyproject() -> dict[str, Any]:
