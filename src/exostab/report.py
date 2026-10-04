@@ -3,6 +3,10 @@
 ``SCHEMA_VERSION`` follows semantic versioning: the minor number grows when fields are added, the major
 number when fields are renamed or removed. The JSON Schema of the current version is shipped as
 ``exostab/schemas/report.schema.json`` (regenerate with ``python -m exostab.report``).
+
+JSON has no infinities or NaN: in ``report.json`` an infinite number is written as the string ``"inf"`` (or
+``"-inf"``), for example the AMD ratio β of a pair whose resonances overlap even on circular orbits, and NaN
+as ``null``.
 """
 
 from __future__ import annotations
@@ -135,7 +139,9 @@ class Report(BaseModel):
     runtime_s: float
 
     def to_json(self) -> str:
-        return json.dumps(_finite(self.model_dump(mode="json")), indent=2, allow_nan=False)
+        # pydantic's JSON mode turns infinities into None; the Python dump still has them
+        data = _json_numbers(self.model_dump(mode="json"), self.model_dump(mode="python"))
+        return json.dumps(data, indent=2, allow_nan=False)
 
 
 class _Settings(Protocol):
@@ -157,15 +163,21 @@ class _Settings(Protocol):
     def spock_python(self) -> str | None: ...
 
 
-def _finite(obj: Any) -> Any:
-    """Replace NaN and infinities (not valid JSON) with None."""
-    if isinstance(obj, float) and not math.isfinite(obj):
-        return None
-    if isinstance(obj, dict):
-        return {k: _finite(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_finite(v) for v in obj]
-    return obj
+def _json_numbers(data: Any, raw: Any) -> Any:
+    """``data`` (a JSON-mode dump) with the infinities of ``raw`` (the Python-mode dump of the same object)
+    written as "inf" / "-inf" and NaN as None, since JSON has neither.
+
+    Infinity is kept distinct from null: an infinite AMD β is the most unstable case, not a missing value.
+    """
+    for x in (raw, data):
+        if isinstance(x, float) and not math.isfinite(x):
+            return None if math.isnan(x) else ("inf" if x > 0 else "-inf")
+    if isinstance(data, dict):
+        return {k: _json_numbers(v, raw.get(k) if isinstance(raw, dict) else None) for k, v in data.items()}
+    if isinstance(data, list):
+        same = isinstance(raw, (list, tuple)) and len(raw) == len(data)
+        return [_json_numbers(v, raw[i] if same else None) for i, v in enumerate(data)]
+    return data
 
 
 def _version(pkg: str) -> str:

@@ -52,11 +52,30 @@ def test_report_json_roundtrip_and_provenance(small_result, tmp_path: Path) -> N
     assert back.overall.verdict == small_result.report.overall.verdict
 
 
-def test_non_finite_numbers_become_null(small_result) -> None:  # type: ignore[no-untyped-def]
+def test_non_finite_numbers_in_json(small_result) -> None:  # type: ignore[no-untyped-def]
+    # an infinite AMD β (resonances overlap even on circular orbits) is the most unstable case: it must not
+    # be written as null, which reads as "no value"
     rep = small_result.report.model_copy(deep=True)
-    rep.indicators["amd"].details["pairs"][0]["beta"] = math.inf
-    data = json.loads(rep.to_json())
-    assert data["indicators"]["amd"]["details"]["pairs"][0]["beta"] is None
+    details = rep.indicators["amd"].details
+    details["pairs"][0]["beta"] = math.inf
+    details["test_values"] = [-math.inf, math.nan, 1.5]
+    text = rep.to_json()  # valid JSON: allow_nan=False would raise otherwise
+    data = json.loads(text)
+    assert data["indicators"]["amd"]["details"]["pairs"][0]["beta"] == "inf"
+    assert data["indicators"]["amd"]["details"]["test_values"] == ["-inf", None, 1.5]
+    assert float(data["indicators"]["amd"]["details"]["pairs"][0]["beta"]) == math.inf
+    Report.model_validate(data)
+
+
+def test_infinite_amd_beta_in_report_json() -> None:
+    from exostab.data import load_system
+
+    # GJ 876 c / b: the resonances overlap even on circular orbits, so β is infinite
+    res = check_system(load_system("GJ 876"), CheckSettings(orbits=50, draws=0, jobs=1, ias15_check=False))
+    pairs = json.loads(res.report.to_json())["indicators"]["amd"]["details"]["pairs"]
+    betas = [p["beta"] for p in pairs]
+    assert "inf" in betas and None not in betas
+    assert all(p["circular_overlap"] for p in pairs if p["beta"] == "inf")
 
 
 def test_shipped_schema_is_up_to_date() -> None:
@@ -93,6 +112,46 @@ def test_figures(small_result, tmp_path: Path) -> None:  # type: ignore[no-untyp
     assert all(p.stat().st_size > 10_000 for p in paths)
 
 
+def test_sweep_figure_shows_infinite_and_zero_beta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from exostab.plots import sweep_figure
+
+    # β = ∞ (resonance overlap on circular orbits, the most AMD-unstable case) and β = 0 (circular, coplanar
+    # orbits) cannot be drawn on a log axis; they must still appear, at the edges, not leave a gap
+    betas = (math.inf, math.inf, 2.0, 0.5, 0.0)
+    rows = [
+        {
+            "value": 10.0 * (k + 1),
+            "nbody_class": "regular",
+            "megno": 2.0,
+            "hill_margin_min": 0.1,
+            "amd_beta_max": b,
+        }
+        for k, b in enumerate(betas)
+    ]
+    figures: list[object] = []
+    monkeypatch.setattr(plt, "close", figures.append)
+    sweep_figure(rows, "x", "title", tmp_path / "sweep.png")
+    monkeypatch.undo()
+    ax = figures[0].axes[2]  # type: ignore[attr-defined]
+    lo, hi = ax.get_ylim()
+    drawn: dict[float, float] = {}
+    for line in ax.lines[:-1]:  # the last line is the β = 1 reference
+        drawn.update(
+            (float(x), float(y)) for x, y in zip(line.get_xdata(), line.get_ydata()) if np.isfinite(y)
+        )
+    for coll in ax.collections:
+        drawn.update((float(x), float(y)) for x, y in coll.get_offsets())
+    plt.close(figures[0])  # type: ignore[arg-type]
+    assert sorted(drawn) == [10.0, 20.0, 30.0, 40.0, 50.0]
+    assert all(lo <= y <= hi for y in drawn.values())
+    assert drawn[10.0] == drawn[20.0] == pytest.approx(hi) and drawn[50.0] == pytest.approx(lo)
+    assert drawn[30.0] == 2.0 and drawn[40.0] == 0.5
+    assert any("β = ∞" in t.get_text() for t in ax.get_legend().get_texts())
+
+
 # ------------------------------------------------------------------------------------------ CLI
 
 
@@ -101,6 +160,30 @@ def test_version_and_help() -> None:
     assert r.exit_code == 0 and __version__ in r.output
     r = runner.invoke(app, ["--help"])
     assert r.exit_code == 0 and "check" in r.output and "catalog" in r.output
+    # pip users have no streamlit_app.py: the help points to the packaged launcher
+    assert 'python -m exostab.web (needs pip install "exostab[web]")' in " ".join(r.output.split())
+
+
+def test_spock_message_points_to_the_environment_script(monkeypatch: pytest.MonkeyPatch) -> None:
+    # scripts/make_spock_env.sh is not installed with the package, so the message gives its URL
+    monkeypatch.delenv("EXOSTAB_SPOCK_PYTHON", raising=False)
+    r = runner.invoke(app, ["check", "Kepler-36", "--spock"])
+    assert r.exit_code == 2
+    assert "https://github.com/mimitoz62/exostab/blob/main/scripts/make_spock_env.sh" in " ".join(
+        r.output.split()
+    )
+
+
+def test_check_help_shows_the_run_length_defaults() -> None:
+    # the defaults are written into the help text by hand (the options default to None so that --budget can
+    # be detected); Rich must not swallow them as markup tags
+    r = runner.invoke(app, ["check", "--help"], env={"COLUMNS": "200"})
+    assert r.exit_code == 0
+    text = " ".join(r.output.split())
+    assert "innermost planet [default: 10000]." in text
+    assert "published uncertainties [default: 20]." in text
+    cli_md = (Path(__file__).resolve().parents[1] / "docs" / "cli.md").read_text()
+    assert "innermost planet [default: 10000]." in cli_md and "uncertainties [default: 20]." in cli_md
 
 
 def test_check_from_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,6 +251,22 @@ def test_check_errors(args: list[str], message: str) -> None:
     assert message in r.output
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["check", "--from-file", str(EXAMPLES / "two_planet.yaml"), *FAST, "--no-plots"],
+        ["sweep", "--from-file", str(EXAMPLES / "two_planet.yaml"), "--steps", "2", "--orbits", "100"],
+        ["catalog", "build", "--limit", "1", "--orbits", "100", "--draws", "0"],
+    ],
+)
+def test_negative_seed_is_rejected(command: list[str], tmp_path: Path) -> None:
+    # numpy's SeedSequence rejects negative seeds: refuse them up front instead of crashing (check, sweep) or
+    # recording every catalog system as an error
+    r = runner.invoke(app, [*command, "--seed", "-1", "--out", str(tmp_path)])
+    assert r.exit_code == 2, r.output
+    assert "--seed" in r.output and not list(tmp_path.iterdir())
+
+
 def test_list_command() -> None:
     r = runner.invoke(app, ["list", "--min-planets", "4", "--max-period-days", "200"])
     assert r.exit_code == 0, r.output
@@ -176,35 +275,48 @@ def test_list_command() -> None:
     assert r.exit_code == 0 and "more; use --limit 0" in r.output
 
 
-def test_sweep_command(tmp_path: Path) -> None:
-    r = runner.invoke(
-        app,
-        [
-            "sweep",
-            "--from-file",
-            str(EXAMPLES / "hd127195_note.yaml"),
-            "--planet",
-            "b",
-            "--param",
-            "e",
-            "--range",
-            "0",
-            "0.6",
-            "--steps",
-            "4",
-            "--orbits",
-            "200",
-            "--jobs",
-            "1",
-            "--out",
-            str(tmp_path),
-        ],
-    )
+def test_sweep_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = [
+        "sweep",
+        "--from-file",
+        str(EXAMPLES / "hd127195_note.yaml"),
+        "--planet",
+        "b",
+        "--param",
+        "e",
+        "--range",
+        "0",
+        "0.6",
+        "--steps",
+        "4",
+        "--orbits",
+        "200",
+        "--seed",
+        "3",
+        "--jobs",
+        "1",
+        "--out",
+        str(tmp_path),
+    ]
+    monkeypatch.setattr("sys.argv", ["exostab", *args])
+    r = runner.invoke(app, args)
     assert r.exit_code == 0, r.output
     rows = list(csv.DictReader((tmp_path / "sweep.csv").open()))
     assert [float(x["value"]) for x in rows] == pytest.approx([0.0, 0.2, 0.4, 0.6])
     assert rows[-1]["hill_verdict"] == "unstable" and rows[0]["amd_verdict"] == "stable"
     assert (tmp_path / "sweep.png").exists() and (tmp_path / "sweep.json").exists()
+    # sweep.json records what is needed to repeat the sweep: the seed changes the N-body classifications
+    meta = json.loads((tmp_path / "sweep.json").read_text())
+    assert meta["settings"] == {
+        "value_range": [0.0, 0.6],
+        "steps": 4,
+        "orbits": 200.0,
+        "seed": 3,
+        "integrator": "whfast",
+        "dt_fraction": pytest.approx(1 / 30),
+    }
+    assert meta["command"].startswith("exostab sweep --from-file") and "--seed 3" in meta["command"]
+    assert meta["created_utc"] and meta["parameter"] == "e"
     r = runner.invoke(app, ["sweep", "HD 127195", "--planet", "z", "--steps", "2"])
     assert r.exit_code == 1 and "no planet" in r.output
 
@@ -237,19 +349,55 @@ def test_sweep_other_parameters(tmp_path: Path, param: str, rng: tuple[str, str]
     assert r.exit_code == 0, r.output
 
 
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--param", "mass"], "--range is required"),  # the e default (0 0.5) is not a valid mass or period
+        (["--param", "period"], "--range is required"),
+        (["--param", "omega"], "--range is required"),
+        (["--param", "e", "--range", "0", "1"], "eccentricity must be in [0, 1)"),
+        (["--param", "mass", "--range", "0", "10"], "mass must be positive"),
+        (["--param", "omega", "--range", "0", "nan"], "must be a finite number"),
+    ],
+)
+def test_sweep_rejects_invalid_ranges(args: list[str], message: str, tmp_path: Path) -> None:
+    r = runner.invoke(
+        app,
+        [
+            "sweep",
+            "HD 127195",
+            "--planet",
+            "c",
+            *args,
+            "--steps",
+            "2",
+            "--orbits",
+            "100",
+            "--out",
+            str(tmp_path),
+        ],
+    )
+    assert r.exit_code == 2, r.output
+    assert message in " ".join(r.output.split()) and not list(tmp_path.iterdir())
+
+
 def test_sweep_rejects_invalid_values() -> None:
     from exostab.sampling import realizations
-    from exostab.sweep import _modified
+    from exostab.sweep import _modified, run_sweep
 
     nom = realizations(two_planet_system(), 0, seed=0)[0]
     for param, value, match in (
         ("e", 1.2, "eccentricity"),
         ("mass", -1.0, "mass"),
         ("period", 0.0, "period"),
+        ("omega", math.inf, "finite"),
         ("bogus", 1.0, "unknown"),
     ):
         with pytest.raises(ValueError, match=match):
             _modified(nom, 0, param, value)
+    # the ends of the range are checked before anything is integrated
+    with pytest.raises(ValueError, match="eccentricity"):
+        run_sweep(two_planet_system(), "b", "e", (0.0, 1.0), 3, orbits=1e9)
 
 
 def test_catalog_build(tmp_path: Path) -> None:

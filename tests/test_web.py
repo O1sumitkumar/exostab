@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -20,6 +22,7 @@ from exostab.web import figures
 from exostab.web.state import (
     AppState,
     WhatIf,
+    _b64,
     apply_changes,
     decode_state,
     encode_state,
@@ -117,6 +120,43 @@ def test_decode_rejects_garbage() -> None:
     assert decode_state({"orbits": "x", "draws": "1"}).orbits is None
 
 
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"seed": "-1"},  # numpy and the seed widget take only 0 ... 2**31 - 1
+        {"seed": "99999999999"},
+        {"budget": "nan"},  # nan passes min/max clamping
+        {"budget": "inf"},
+        {"edits": _b64({"Test b": {"eccentricity": float("nan")}})},
+        {"whatif": _b64({"planet": "Test b", "mass_factor": 4.0})},  # not a choice of the slider
+        {"whatif": _b64({"planet": "Test b", "eccentricity": 1.5})},
+        {"whatif": _b64({"planet": "Test c", "period_ratio": 0.5})},
+        {"orbits": "1e7", "draws": "500"},  # days of CPU time on a public server
+        {"orbits": "1e5", "draws": "101"},
+        {"orbits": "1.5e5", "draws": "10"},
+        {"orbits": "nan", "draws": "10"},
+    ],
+)
+def test_decode_falls_back_to_defaults(params: dict[str, str]) -> None:
+    assert decode_state({"system": "X", **params}) == AppState(system="X")
+
+
+def test_decode_accepts_the_longest_preset() -> None:
+    from exostab.budget import PRESETS
+
+    orbits, draws = PRESETS[-1]
+    s = decode_state({"orbits": f"{orbits:g}", "draws": str(draws), "seed": str(2**31 - 1), "budget": "inf"})
+    assert (s.orbits, s.draws, s.seed, s.budget_s) == (orbits, draws, 2**31 - 1, 10)
+
+
+@pytest.mark.parametrize("params", [{"seed": "-1"}, {"seed": "99999999999"}, {"budget": "nan"}])
+def test_app_survives_crafted_links(params: dict[str, str]) -> None:
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.query_params.update({"system": "Kepler-36", "source": "snapshot", **params})
+    at.run()
+    assert not at.exception, at.exception
+
+
 def test_input_hash_changes_with_any_input() -> None:
     s = two_planet_system()
     h = input_hash(s, {"seed": 0})
@@ -143,6 +183,10 @@ def test_app_runs_headless() -> None:
     assert "Overall:" in text
     assert len(at.get("download_button")) == 3
     assert any("orbits=300" in c.value for c in at.code)
+    # the documentation link must resolve: it points to the docs folder of the repository
+    assert any(
+        "[documentation](https://github.com/mimitoz62/exostab/tree/main/docs)" in c.value for c in at.caption
+    )
     # an unknown system gives a clear error instead of a crash
     at2 = AppTest.from_file(APP, default_timeout=60)
     at2.query_params.update({"system": "Nonexistent-99", "source": "snapshot"})
@@ -167,3 +211,198 @@ def test_app_rejects_circumbinary_and_reports_json() -> None:
         check_system(load_system("Kepler-36"), CheckSettings(orbits=200, draws=1, jobs=1)).report.to_json()
     )
     assert rep["settings"]["orbits"] == 200
+
+
+def _what_if_app(system: str, **params: str) -> AppTest:
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.query_params.update({"system": system, "source": "snapshot", **params})
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def _slider(at: AppTest, label: str) -> float:
+    return float(next(s.value for s in at.slider if s.label.startswith(label)))
+
+
+def test_what_if_is_not_set_by_selecting_a_planet() -> None:
+    # GJ 876 c lies 15.5 times further out than d, beyond the slider's old range (1.01-10): selecting it
+    # used to move c to 10 times d's period without the user touching a slider
+    at = _what_if_app("GJ 876")
+    next(s for s in at.selectbox if s.label == "Planet").select("GJ 876 c").run()
+    assert not at.exception, at.exception
+    state = at.session_state["state"]
+    assert state.whatif.planet == "GJ 876 c" and not state.whatif.is_active()
+    gj876 = load_system("GJ 876")
+    p_c, p_d = gj876.planet("c").period_days.value, gj876.planet("d").period_days.value
+    assert _slider(at, "Period ratio to GJ 876 d") == pytest.approx(p_c / p_d)
+    # moving the slider does set a what-if, which stays set on later reruns and comes back from the link
+    next(s for s in at.slider if s.label.startswith("Period ratio")).set_value(12.0).run()
+    assert at.session_state["state"].whatif.period_ratio == 12.0
+    at.run()
+    assert at.session_state["state"].whatif.period_ratio == 12.0 and _slider(at, "Period ratio") == 12.0
+    link = {k: at.query_params[k][0] for k in at.query_params}
+    at2 = _what_if_app("GJ 876", whatif=link["whatif"])
+    assert at2.session_state["state"].whatif == WhatIf(planet="GJ 876 c", period_ratio=12.0)
+
+
+def test_what_if_keeps_a_table_eccentricity_above_the_old_slider_range() -> None:
+    # the table accepts e up to 0.95; the eccentricity slider (innermost planet, selected by default) used to
+    # stop at 0.9 and overrode 0.93 with 0.9
+    at = _what_if_app("Kepler-36", edits=_b64({"Kepler-36 b": {"eccentricity": 0.93}}))
+    assert not at.session_state["state"].whatif.is_active()
+    assert _slider(at, "Eccentricity") == 0.93
+
+
+def test_what_if_neighbour_follows_the_edited_order() -> None:
+    # with c moved outside b (70 d > 61.1 d), b's inner neighbour is d, as in apply_changes
+    at = _what_if_app("GJ 876", edits=_b64({"GJ 876 c": {"period_days": 70.0}}))
+    next(s for s in at.selectbox if s.label == "Planet").select("GJ 876 b").run()
+    assert not at.exception and not at.error, (at.exception, at.error)
+    assert not at.session_state["state"].whatif.is_active()
+    assert any(s.label == "Period ratio to GJ 876 d" for s in at.slider)
+
+
+@pytest.mark.parametrize("planet", ["TRAPPIST-1 c", "TRAPPIST-1 d"])
+def test_what_if_with_a_cleared_period(planet: str) -> None:
+    # a cleared cell is None: the what-if box must not divide by it, and the run is refused with a message
+    at = _what_if_app(
+        "TRAPPIST-1",
+        edits=_b64({"TRAPPIST-1 c": {"period_days": None}}),
+        whatif=_b64({"planet": planet, "mass_factor": 2.0}),
+    )
+    assert at.error and "a value is missing" in at.error[0].value
+
+
+def test_packaged_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `python -m exostab.web` works from an installed package: streamlit_app.py at the repository root is not
+    # in the wheel
+    import streamlit.web.cli as stcli
+
+    import exostab.web.__main__ as launcher
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(sys, "argv", ["python -m exostab.web"])
+    monkeypatch.setattr(stcli, "main", lambda: calls.append(list(sys.argv)))
+    assert launcher.main(["--server.port", "8502"]) == 0
+    assert calls == [["streamlit", "run", str(launcher.SCRIPT), "--server.port", "8502"]]
+    assert launcher.SCRIPT.parent == Path(launcher.__file__).parent
+    at = AppTest.from_file(str(launcher.SCRIPT), default_timeout=60)
+    at.query_params.update({"system": "Kepler-36", "source": "snapshot"})
+    at.run()
+    assert not at.exception, at.exception
+    assert at.title[0].value == "exostab"
+    # without the [web] extra it says what to install
+    monkeypatch.setitem(sys.modules, "streamlit.web.cli", None)
+    assert launcher.main([]) == 1
+
+
+def test_app_reports_a_broken_spock_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EXOSTAB_SPOCK_PYTHON", "/nonexistent/python")
+    at = _what_if_app("TOI-270", orbits="100", draws="1", run="1", spock="1")
+    assert at.error and "SPOCK could not be run" in at.error[0].value
+    # SPOCK and the automatic run are switched off, also in the link, so a rerun does not repeat the failure
+    state = at.session_state["state"]
+    assert not state.spock and not state.run
+    assert "spock" not in at.query_params and "run" not in at.query_params
+    at.run()
+    assert not at.exception and not at.error, (at.exception, at.error)
+    assert not next(c for c in at.checkbox if c.label.startswith("Add SPOCK")).value
+
+
+@pytest.fixture
+def fake_budget(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+    """The web app with a fixed, cheap budget plan (200 orbits, 1 draw; 1e-3 and 1e-2 s per orbit for WHFast
+    and IAS15) and a record of every analysis it runs (orbits, draws, budget_s)."""
+    import streamlit as st
+
+    import exostab.web.app as web_app
+    from exostab.budget import Plan
+
+    calls: list[tuple[float, int, float | None]] = []
+    check = web_app.check_system
+
+    def counting_check(system, settings, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((settings.orbits, settings.draws, settings.budget_s))
+        assert settings.orbits <= 1e3, "this test must not integrate long runs"
+        return check(system, settings, **kwargs)
+
+    def plan(system, budget_s, base):  # type: ignore[no-untyped-def]
+        p = Plan(
+            orbits=200.0,
+            draws=1,
+            budget_s=budget_s,
+            estimated_s=1.0,
+            whfast_s_per_orbit=1e-3,
+            ias15_s_per_orbit=1e-2,
+        )
+        return replace(base, orbits=p.orbits, draws=p.draws, budget_s=budget_s), p
+
+    st.cache_data.clear()
+    monkeypatch.setattr(web_app, "check_system", counting_check)
+    monkeypatch.setattr(web_app, "settings_for_budget", plan)
+    yield calls
+    st.cache_data.clear()
+
+
+def _caption(at: AppTest) -> str:
+    return next(c.value for c in at.caption if c.value.startswith("N-body:"))
+
+
+def test_budget_run_is_not_recomputed(fake_budget) -> None:  # type: ignore[no-untyped-def]
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.query_params.update({"system": "Kepler-36", "source": "snapshot", "budget": "15", "seed": "4242"})
+    at.run()
+    next(b for b in at.button if b.label == "Run").click().run()
+    assert not at.exception, at.exception
+    assert fake_budget == [(200.0, 1, 15.0)]
+    caption = _caption(at)
+    assert "chosen for a 15 s budget" in caption
+    # a rerun with the same inputs (any widget interaction) finds the cached result: same report and hash
+    at.run()
+    assert fake_budget == [(200.0, 1, 15.0)] and _caption(at) == caption
+    # so does the link the app wrote, opened in a new session on the same server
+    link = {k: at.query_params[k][0] for k in at.query_params}
+    assert link["orbits"] == "200" and link["draws"] == "1" and link["run"] == "1"
+    at2 = AppTest.from_file(APP, default_timeout=120)
+    at2.query_params.update(link)
+    at2.run()
+    assert not at2.exception, at2.exception
+    assert fake_budget == [(200.0, 1, 15.0)] and _caption(at2) == caption
+
+
+def test_link_run_length_is_limited_by_its_cost(fake_budget) -> None:  # type: ignore[no-untyped-def]
+    # 1e5 orbits and 100 draws pass the static checks (the longest preset), but at the measured speed they
+    # would take about 1,000 s here: the run length chosen for the link's budget is used instead
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.query_params.update(
+        {
+            "system": "Kepler-36",
+            "source": "snapshot",
+            "budget": "20",
+            "orbits": "1e5",
+            "draws": "100",
+            "run": "1",
+        }
+    )
+    at.run()
+    assert not at.exception, at.exception
+    assert fake_budget == [(200.0, 1, 20.0)]
+    assert any("more than the 120 s limit" in w.value for w in at.warning)
+    assert "chosen for a 20 s budget" in _caption(at)
+    # an affordable run length from a link is used as given; no budget chose it here, so none is recorded
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.query_params.update(
+        {
+            "system": "Kepler-36",
+            "source": "snapshot",
+            "budget": "20",
+            "orbits": "300",
+            "draws": "2",
+            "run": "1",
+        }
+    )
+    at.run()
+    assert not at.exception, at.exception
+    assert fake_budget[-1] == (300.0, 2, None)
+    assert "budget" not in _caption(at)

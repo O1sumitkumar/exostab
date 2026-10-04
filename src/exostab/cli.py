@@ -17,10 +17,14 @@ from rich.table import Table
 from . import __version__
 from .models import System
 
+REPO = "https://github.com/mimitoz62/exostab"
+SPOCK_ENV_SCRIPT = f"{REPO}/blob/main/scripts/make_spock_env.sh"  # not part of the package
+
 app = typer.Typer(
     name="exostab",
     help="Is this planetary system dynamically stable? Hill spacing, AMD and N-body/MEGNO indicators for "
     "known exoplanet systems, with every assumption shown.",
+    epilog='Web app: python -m exostab.web (needs pip install "exostab\\[web]").',
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",
@@ -97,7 +101,9 @@ OrbitsOpt = Annotated[
     float, typer.Option("--orbits", help="N-body run length, in orbits of the innermost planet.", min=10)
 ]
 SeedOpt = Annotated[
-    int, typer.Option("--seed", help="Random seed: the same seed gives the same draws and results.")
+    int,
+    # numpy's SeedSequence takes only non-negative integers
+    typer.Option("--seed", help="Random seed: the same seed gives the same draws and results.", min=0),
 ]
 JobsOpt = Annotated[
     int | None, typer.Option("--jobs", "-j", help="Worker processes (default: all cores but one).", min=1)
@@ -106,7 +112,7 @@ RefreshOpt = Annotated[
     bool, typer.Option("--refresh", help="Query the archive again instead of using the disk cache.")
 ]
 OfflineOpt = Annotated[
-    bool, typer.Option("--offline", help="Use only the bundled offline snapshot (about 20 systems).")
+    bool, typer.Option("--offline", help="Use only the bundled offline snapshot (22 systems).")
 ]
 FileOpt = Annotated[
     Path | None,
@@ -126,13 +132,15 @@ def check(
     orbits: Annotated[
         float | None,
         typer.Option(
-            "--orbits", help="N-body run length, in orbits of the innermost planet [default: 10000].", min=10
+            "--orbits",
+            help="N-body run length, in orbits of the innermost planet \\[default: 10000].",
+            min=10,
         ),
     ] = None,
     draws: Annotated[
         int | None,
         typer.Option(
-            "--draws", help="Monte Carlo draws within the published uncertainties [default: 20].", min=0
+            "--draws", help="Monte Carlo draws within the published uncertainties \\[default: 20].", min=0
         ),
     ] = None,
     budget: Annotated[
@@ -163,8 +171,9 @@ def check(
         bool,
         typer.Option(
             "--spock",
-            help="Add SPOCK's machine-learned classifier (3+ planets). Needs a separate SPOCK environment: see "
-            "scripts/make_spock_env.sh; its python is taken from --spock-python or EXOSTAB_SPOCK_PYTHON.",
+            help="Add SPOCK's machine-learned classifier (3+ planets). Needs a separate SPOCK environment, built "
+            f"by scripts/make_spock_env.sh ({SPOCK_ENV_SCRIPT}); its python is taken from --spock-python or "
+            "EXOSTAB_SPOCK_PYTHON.",
         ),
     ] = False,
     spock_python: Annotated[
@@ -192,8 +201,9 @@ def check(
         python = find_spock(spock_python)
         if python is None:
             err_console.print(
-                "[red]--spock needs a SPOCK environment: run scripts/make_spock_env.sh and pass its python with "
-                "--spock-python or EXOSTAB_SPOCK_PYTHON.[/red]"
+                "[red]--spock needs a SPOCK environment: build one with scripts/make_spock_env.sh (in a clone of "
+                f"the repository, or download it from {SPOCK_ENV_SCRIPT}) and pass its python with --spock-python "
+                "or EXOSTAB_SPOCK_PYTHON.[/red]"
             )
             raise typer.Exit(2)
     system = _load(name, from_file, refresh, offline)
@@ -251,10 +261,14 @@ def sweep(
         SweepParam,
         typer.Option("--param", help="e (eccentricity), mass (Earth masses), period (days) or omega (deg)."),
     ] = SweepParam.e,
-    value_range: Annotated[tuple[float, float], typer.Option("--range", help="Start and end values.")] = (
-        0.0,
-        0.5,
-    ),
+    value_range: Annotated[
+        tuple[float, float] | None,
+        typer.Option(
+            "--range",
+            help="Start and end values, in the unit of --param \\[default for e: 0 0.5; required for mass, "
+            "period and omega].",
+        ),
+    ] = None,
     steps: Annotated[int, typer.Option("--steps", help="Number of values.", min=2)] = 25,
     from_file: FileOpt = None,
     orbits: OrbitsOpt = 1e4,
@@ -267,8 +281,19 @@ def sweep(
     offline: OfflineOpt = False,
 ) -> None:
     """Vary one parameter of one planet and record every indicator (nominal parameters otherwise)."""
-    from .sweep import run_sweep, write_sweep
+    from .sweep import check_value, run_sweep, write_sweep
 
+    if value_range is None:
+        if param is not SweepParam.e:
+            err_console.print(f"[red]--range is required with --param {param.value}.[/red]")
+            raise typer.Exit(2)
+        value_range = (0.0, 0.5)
+    try:
+        for end in value_range:
+            check_value(param.value, end)
+    except ValueError as exc:
+        err_console.print(f"[red]--range: {exc}.[/red]")
+        raise typer.Exit(2) from exc
     system = _load(name, from_file, refresh, offline)
     try:
         system.planet(planet)
@@ -279,7 +304,18 @@ def sweep(
         rows = run_sweep(system, planet, param.value, value_range, steps, orbits=orbits, seed=seed, jobs=jobs)
     out_dir = out or Path("exostab-results") / slug(system.name)
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths = write_sweep(rows, system, planet, param.value, out_dir)
+    paths = write_sweep(
+        rows,
+        system,
+        planet,
+        param.value,
+        out_dir,
+        value_range=value_range,
+        steps=steps,
+        orbits=orbits,
+        seed=seed,
+        command=_command(),
+    )
     t = Table(title=f"{system.name}: sweep of {param.value} for planet {planet}", header_style="bold")
     for col in ("value", "N-body", "<Y>", "Hill", "AMD"):
         t.add_column(col)

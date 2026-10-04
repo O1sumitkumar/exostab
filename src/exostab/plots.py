@@ -65,6 +65,16 @@ def _plotted_megno(megno: float | None, cls: str) -> float:
     return min(megno, MEGNO_CLIP)
 
 
+def _plotted_beta(betas: npt.ArrayLike) -> tuple[npt.NDArray[np.float64], float, float]:
+    """AMD ratios as plotted on a log axis, with the axis limits. A log axis can show neither β = ∞
+    (resonances overlap even on circular orbits) nor β = 0 (no AMD: circular, coplanar orbits), so they sit
+    at the top and bottom edges."""
+    b = np.asarray(betas, dtype=float)
+    shown = np.append(b[np.isfinite(b) & (b > 0)], 1.0)  # the AMD-stability limit is always in view
+    lo, hi = float(shown.min()) / 3, float(shown.max()) * 3
+    return np.where(np.isposinf(b), hi, np.where(b == 0, lo, b)), lo, hi
+
+
 def planet_color(k: int) -> str:
     return PLANET_COLORS[k % len(PLANET_COLORS)]
 
@@ -242,10 +252,31 @@ def sweep_figure(rows: Sequence[dict[str, Any]], param_label: str, title: str, p
         ax.axhline(0.0, color=MUTED, lw=0.8, ls="--")
         ax.set_ylabel("Gladman margin,\nclosest pair\n(Hill stable above 0)")
         ax = axes[2]
-        ax.plot(x, [r["amd_beta_max"] for r in rows], color=PLANET_COLORS[2], lw=1.6, marker="o", ms=3)
+        beta = np.array([r["amd_beta_max"] for r in rows], dtype=float)
+        y, lo, hi = _plotted_beta(beta)
+        regular = np.isfinite(beta) & (beta > 0)
+        ax.plot(x, np.where(regular, y, np.nan), color=PLANET_COLORS[2], lw=1.6, marker="o", ms=3)
+        for edge, marker, label in (
+            (np.isposinf(beta), "^", "β = ∞: resonances overlap even on circular orbits (drawn at the top)"),
+            (beta == 0, "v", "β = 0: circular, coplanar orbits (drawn at the bottom)"),
+        ):
+            if edge.any():
+                ax.scatter(
+                    x[edge],
+                    y[edge],
+                    color=PLANET_COLORS[2],
+                    marker=marker,
+                    s=30,
+                    label=label,
+                    clip_on=False,
+                    zorder=3,
+                )
         ax.axhline(1.0, color=MUTED, lw=0.8, ls="--")
         ax.set_yscale("log")
+        ax.set_ylim(lo, hi)
         ax.set_ylabel("largest AMD ratio β\n(AMD-stable below 1)")
+        if np.isposinf(beta).any() or (beta == 0).any():
+            ax.legend(fontsize=7.5, loc="best")
         ax.set_xlabel(param_label)
         fig.savefig(path)
         plt.close(fig)

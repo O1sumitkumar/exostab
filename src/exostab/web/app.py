@@ -1,33 +1,37 @@
 """exostab web app (Streamlit).
 
     pip install "exostab[web]"
-    streamlit run streamlit_app.py
+    python -m exostab.web            # or, in a clone of the repository: streamlit run streamlit_app.py
 
 Search a system, edit its parameters, choose a time budget and run the same analysis as ``exostab check``.
-Results are cached by a hash of every input, so a repeated view (or a shared link opened on the same server)
-is instant. Integrations run in a single process: hosted apps have one or two CPUs, and a process pool inside
-a Streamlit server is fragile.
+The run length chosen for a budget and the results are cached by a hash of every input, so a repeated view
+(or a shared link opened on the same server) is instant. Integrations run in a single process: hosted apps
+have one or two CPUs, and a process pool inside a Streamlit server is fragile. A shared link's run length is
+used only if its estimated cost on this server is within the largest time budget.
 """
 
 from __future__ import annotations
 
 import io
 import json
-from dataclasses import asdict, replace
+import math
+from dataclasses import asdict
 from typing import Any
 
 import streamlit as st
 
 from .. import __version__
 from ..analysis import CheckResult, CheckSettings, check_system, settings_for_budget
+from ..budget import estimate_seconds
 from ..data import IncompleteSystemError, load_rows, system_from_rows
 from ..data.archive import ArchiveError, group_by_host
 from ..data.names import SystemNotFoundError, resolve_host
 from ..indicators import Verdict
-from ..indicators.spock import spock_python
+from ..indicators.spock import SpockUnavailableError, spock_python
 from ..models import System
 from ..plots import megno_figure, orbits_figure
 from ..report import ACKNOWLEDGMENT, group_flags
+from ..sampling import E_MAX
 from . import figures
 from .state import (
     BUDGET_MAX,
@@ -37,15 +41,16 @@ from .state import (
     WhatIf,
     apply_changes,
     decode_state,
+    edited_rows,
     encode_state,
     input_hash,
-    planet_rows,
     share_url,
     table_edits,
 )
 
 REPO = "https://github.com/mimitoz62/exostab"
-DOCS = "https://mimitoz62.github.io/exostab/"
+# The docs as Markdown on GitHub: the documentation site (docs.yml) is not deployed yet, and its URL gives 404.
+DOCS = f"{REPO}/tree/main/docs"
 BADGE = {
     Verdict.STABLE: "green",
     Verdict.MARGINAL: "orange",
@@ -78,19 +83,70 @@ def _system(source: str, name: str) -> System:
     return system_from_rows(hosts[host], TableInfo(kind=kind, retrieved_utc=retrieved, path=None, note=note))  # type: ignore[arg-type]
 
 
+@st.cache_data(show_spinner=False, max_entries=256)
+def _plan(system_json: str, settings_json: str) -> tuple[float, int, float, float]:
+    """Orbits and draws chosen for the time budget on this server, and the measured seconds per orbit of
+    WHFast and IAS15. Cached by its inputs, because the choice depends on the measured speed."""
+    system = System.model_validate_json(system_json)
+    s = json.loads(settings_json)
+    base = CheckSettings(seed=s["seed"], inclination_prior=s["prior"], jobs=1)
+    _, p = settings_for_budget(system, float(s["budget_s"]), base)
+    return p.orbits, p.draws, p.whfast_s_per_orbit, p.ias15_s_per_orbit
+
+
+def _run_settings(state: AppState, system_json: str) -> tuple[dict[str, Any], str | None]:
+    """Settings of the run and a note for the user.
+
+    The run length is the one chosen for the time budget on this server, unless the state already carries
+    one (a shared link, or the previous run while parameters are edited) whose estimated cost here is within
+    BUDGET_MAX; budget_s is recorded only when the budget chose the run length. The cache key of the run is
+    computed from these resolved settings, so the view after a budget run finds its result.
+    """
+    budget = {"seed": state.seed, "prior": state.prior, "budget_s": state.budget_s}
+    orbits, draws, s_wh, s_ias = _plan(system_json, json.dumps(budget, sort_keys=True))
+    budget_s: float | None = state.budget_s
+    note = None
+    if (
+        state.orbits is not None
+        and state.draws is not None
+        and (state.orbits, state.draws) != (orbits, draws)
+    ):
+        cost = estimate_seconds(state.orbits, state.draws, s_wh, s_ias, workers=1)
+        if cost <= BUDGET_MAX:
+            orbits, draws, budget_s = state.orbits, state.draws, None
+        else:
+            note = (
+                f"The requested run ({state.orbits:,.0f} orbits, {state.draws} draws) would take about "
+                f"{cost:,.0f} s on this server, more than the {BUDGET_MAX} s limit, so the run length was "
+                f"chosen for the {state.budget_s:g} s budget instead."
+            )
+    settings = {
+        "seed": state.seed,
+        "prior": state.prior,
+        "budget_s": budget_s,
+        "orbits": orbits,
+        "draws": draws,
+        "spock": state.spock,
+    }
+    return settings, note
+
+
 @st.cache_data(show_spinner=False, max_entries=64)
 def _run(system_json: str, settings_json: str, key: str) -> CheckResult:
     """The analysis, cached by the input hash ``key`` (the JSON arguments are the inputs themselves)."""
     system = System.model_validate_json(system_json)
     s = json.loads(settings_json)
     spock = spock_python() if s.get("spock") else None
-    base = CheckSettings(
-        seed=s["seed"], inclination_prior=s["prior"], jobs=1, n_samples=300, spock_python=spock
+    settings = CheckSettings(
+        orbits=s["orbits"],
+        draws=s["draws"],
+        seed=s["seed"],
+        inclination_prior=s["prior"],
+        jobs=1,
+        n_samples=300,
+        budget_s=s["budget_s"],
+        spock_python=spock,
     )
-    if s["orbits"] is not None and s["draws"] is not None:
-        settings = replace(base, orbits=s["orbits"], draws=s["draws"])
-    else:
-        settings, _ = settings_for_budget(system, float(s["budget_s"]), base)
     result = check_system(system, settings, command=f"exostab web app {__version__} (input {key[:12]})")
     result.extra["input_hash"] = key
     return result
@@ -180,12 +236,8 @@ def _parameters(state: AppState, system: System) -> System:
         "Edit any value; leave ω empty to draw it at random. Published uncertainties are kept for the "
         "Monte Carlo draws. Every change is listed in the report."
     )
-    base_rows = planet_rows(system)
-    for r in base_rows:
-        for col, v in state.edits.get(r["planet"], {}).items():
-            r[col] = v
     edited = st.data_editor(
-        base_rows,
+        edited_rows(system, state.edits),
         key=f"table_{state.system}_{state.source}",
         hide_index=True,
         disabled=["planet", "mass_kind", "phase"],
@@ -194,47 +246,50 @@ def _parameters(state: AppState, system: System) -> System:
             "period_days": st.column_config.NumberColumn("P (days)", min_value=1e-3, format="%.6g"),
             "mass_earth": st.column_config.NumberColumn("Mass (M⊕)", min_value=1e-6, format="%.4g"),
             "mass_kind": st.column_config.TextColumn("Mass kind"),
-            "eccentricity": st.column_config.NumberColumn("e", min_value=0.0, max_value=0.95, format="%.4g"),
+            "eccentricity": st.column_config.NumberColumn("e", min_value=0.0, max_value=E_MAX, format="%.4g"),
             "omega_deg": st.column_config.NumberColumn("ω (deg)", format="%.4g"),
             "phase": st.column_config.TextColumn("Phase from"),
         },
     )
     state.edits = table_edits(system, list(edited))
+    rows = {r["planet"]: r for r in edited_rows(system, state.edits)}  # the table as it is now
     with st.expander("What if? Adjust one planet", expanded=state.whatif.is_active()):
         names = [p.name for p in system.planets]
         cur = state.whatif
         planet = st.selectbox("Planet", names, index=names.index(cur.planet) if cur.planet in names else 0)
-        p_rows = {r["planet"]: r for r in base_rows}
-        row = p_rows[planet]
+        row, mine = rows[planet], cur.planet == planet
         c1, c2, c3 = st.columns(3)
         factor = c1.select_slider(
             "Mass × factor",
             options=MASS_FACTORS,
-            value=cur.mass_factor if cur.planet == planet and cur.mass_factor in MASS_FACTORS else 1.0,
+            value=cur.mass_factor if mine and cur.mass_factor in MASS_FACTORS else 1.0,
         )
-        e_default = float(
-            cur.eccentricity
-            if cur.planet == planet and cur.eccentricity is not None
-            else (row["eccentricity"] or 0.0)
-        )
-        ecc = c2.slider("Eccentricity", 0.0, 0.9, min(e_default, 0.9), step=0.01)
-        k = names.index(planet)
-        ratio = None
-        if k > 0:
-            p_in = p_rows[names[k - 1]]["period_days"]
-            r_default = float(
-                cur.period_ratio
-                if cur.planet == planet and cur.period_ratio is not None
-                else row["period_days"] / p_in
-            )
-            ratio = c3.slider(
-                f"Period ratio to {names[k - 1]}", 1.01, 10.0, min(max(r_default, 1.01), 10.0), step=0.01
-            )
-            if abs(ratio - row["period_days"] / p_in) < 5e-3:
-                ratio = None
+        # A slider sets a what-if value only when it is moved (or the value came with the link): a table value
+        # outside the slider's range is shown at the end of the range, and is not changed by being shown.
+        e_table = float(row["eccentricity"] or 0.0)
+        e_set = cur.eccentricity if mine else None
+        e_shown = min(e_table if e_set is None else e_set, E_MAX)
+        ecc = c2.slider("Eccentricity", 0.0, E_MAX, e_shown, step=0.01)
+        if ecc != e_shown:
+            e_set = None if abs(ecc - e_table) < 5e-3 else ecc
+        # The inner neighbour comes from the edited periods, as in apply_changes.
+        ratio = cur.period_ratio if mine else None
+        if not all(r["period_days"] is not None and r["period_days"] > 0 for r in rows.values()):
+            c3.caption("A period ratio needs a positive period for every planet.")
         else:
-            c3.caption("The innermost planet has no inner neighbour.")
-        e_set = None if abs(ecc - (row["eccentricity"] or 0.0)) < 5e-3 else ecc
+            order = sorted(rows.values(), key=lambda r: float(r["period_days"]))
+            k = [r["planet"] for r in order].index(planet)
+            if k == 0:
+                c3.caption("The innermost planet has no inner neighbour.")
+                ratio = None
+            else:
+                r_table = row["period_days"] / order[k - 1]["period_days"]
+                r_shown = r_table if ratio is None else ratio
+                hi = float(max(10, math.ceil(1.2 * max(r_table, r_shown))))
+                r_shown = min(max(r_shown, 1.01), hi)
+                moved = c3.slider(f"Period ratio to {order[k - 1]['planet']}", 1.01, hi, r_shown, step=0.01)
+                if moved != r_shown:
+                    ratio = None if abs(moved - r_table) < 5e-3 else moved
         state.whatif = WhatIf(
             planet=planet, mass_factor=float(factor), eccentricity=e_set, period_ratio=ratio
         )
@@ -358,18 +413,22 @@ def main() -> None:
         state.orbits = state.draws = None
     if run_clicked or state.run:
         state.run = True
-        settings = {
-            "seed": state.seed,
-            "prior": state.prior,
-            "budget_s": state.budget_s,
-            "orbits": state.orbits,
-            "draws": state.draws,
-            "spock": state.spock,
-        }
-        key = input_hash(modified, settings)
-        with st.spinner("Integrating… (cached results appear instantly)"):
-            result = _run(modified.model_dump_json(), json.dumps(settings, sort_keys=True), key)
-        _results(result, state)
+        system_json = modified.model_dump_json()
+        try:
+            with st.spinner("Integrating… (cached results appear instantly)"):
+                settings, note = _run_settings(state, system_json)
+                key = input_hash(modified, settings)
+                result = _run(system_json, json.dumps(settings, sort_keys=True), key)
+        except SpockUnavailableError as exc:
+            # failures are not cached: switch SPOCK and the automatic run off, or every rerun repeats the call
+            state.spock = state.run = False
+            st.error(
+                f"SPOCK could not be run, so it has been switched off: {exc}. Press Run to check without it."
+            )
+        else:
+            if note:
+                st.warning(note)
+            _results(result, state)
     st.query_params.from_dict(encode_state(state))
     st.divider()
     st.caption(ACKNOWLEDGMENT)
