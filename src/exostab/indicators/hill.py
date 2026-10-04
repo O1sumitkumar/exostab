@@ -15,16 +15,34 @@ Three or more planets
     No analytic criterion exists. Chambers, Wetherill & Boss (1996) found that the time to the first
     close encounter grows roughly exponentially with the spacing measured in mutual Hill radii. We use
     the spacing of each adjacent pair as a heuristic: any pair that fails the two-planet criterion or
-    has crossing orbits is flagged unstable; the system is called stable only if every adjacent pair
-    is at least ``DELTA_MULTI`` = 12 mutual Hill radii apart; anything in between is marginal. Pu & Wu
-    (2015) found that systems like the Kepler multi-planet systems need a spacing of about 10 to
-    survive for a billion years if the orbits are circular and coplanar, and about 12 if the
-    eccentricities are about 0.02; we use the larger, more conservative value (DECISIONS.md, D12).
+    has crossing orbits is flagged unstable; the system is called stable only if every adjacent pair is
+    as widely spaced as Pu & Wu (2015) find necessary for its eccentricities; anything in between is
+    marginal. For 7-planet systems of 3 to 9 Earth masses around a solar-mass star, Pu & Wu find that
+    half survive 1 Gyr if K_eff >= K_50 = 10.2 on circular, coplanar orbits (their Eq. 12, extrapolated
+    from 10 Myr), and that eccentricities raise the requirement (measured at 1 Myr):
+    "K_50(sigma_e, sigma_inc) ~ K_50(0, 0) + (sigma_e / 0.01) + (sigma_inc / 0.04)" (their Eq. 14;
+    "an eccentricity dispersion of a mere one percent requires the spacing to expand by one Hill
+    sphere"), or, in units of the Hill eccentricity e_H = R_H / a = ((m_j + m_k) / (3 M_*))^(1/3),
+    "K_50(sigma_e, sigma_inc) ~ K_50(0, 0) + 2.4 [(sigma_e / e_H) + (sigma_inc / (4.0 e_H))]" (their
+    Eq. 15 as corrected in the erratum, Pu & Wu 2016). exostab requires, for every adjacent pair,
+
+        Delta >= max(DELTA_MULTI, K_50(0, 0) + 2.4 max(e_j, e_k) / e_H),   DELTA_MULTI = 12,
+
+    using the larger eccentricity of the pair in place of the Rayleigh dispersion sigma_e (conservative)
+    and the coplanar orbits exostab models (sigma_inc = 0). DELTA_MULTI = 12 is Pu & Wu's value for
+    sigma_e ~ 0.02 and is kept as a floor. Pu & Wu explored only sigma_e <= 0.05, so a system with any
+    eccentricity above ``E_CALIBRATED`` = 0.05 is never called stable by this indicator (DECISIONS.md,
+    D12).
 
 The mutual Hill radius of planets j and k is ((m_j + m_k) / (3 M_*))^(1/3) (a_j + a_k) / 2, the
-convention of Chambers et al. (1996) and Pu & Wu (2015). In these units the Gladman limit for two
-Earth-mass planets is about 3.4 rather than exactly 2*sqrt(3), because conventions for the reference
-semi-major axis differ at order (m / M_*)^(1/3).
+convention of Chambers et al. (1996) and Pu & Wu (2015). In these units the circular-orbit Gladman
+limit evaluated here is 2*sqrt(3) up to terms of order (m / M_*)^(2/3): 3.463 for two Earth-mass
+planets and 3.429 for two Jupiter-mass planets around a solar-mass star. Lower values quoted
+elsewhere, such as 3.39 for Earth masses (Obertas et al. 2017, Eq. 5), come from the lowest-order
+criterion normalised to a_1, whose reference semi-major axis differs at order (m / M_*)^(1/3). Keeping
+the next-order Marchal-Bozis mass term of Veras & Armitage (2004, Eq. 2.5), omitted here, would lower
+the limit slightly (to 3.441 for Earth masses); omitting it is the conservative choice (DECISIONS.md,
+D12).
 """
 
 from __future__ import annotations
@@ -36,9 +54,14 @@ from .._numerics import bisect
 from ..sampling import Realization
 from . import DrawStats, IndicatorResult, Verdict, combine
 
-# Spacing (in mutual Hill radii) above which an adjacent pair in a system of three or more planets is
-# treated as widely spaced (Pu & Wu 2015). See DECISIONS.md (D12) for the choice and its uncertainty.
+# Spacing (in mutual Hill radii) below which an adjacent pair in a system of three or more planets is never
+# treated as widely spaced (Pu & Wu 2015, K_50 for sigma_e ~ 0.02), and the eccentricity-dependent requirement
+# above it (Pu & Wu 2015, Eq. 12 at 1 Gyr, and their Eq. 15 as corrected by Pu & Wu 2016). See DECISIONS.md
+# (D12) for the choices and their uncertainty.
 DELTA_MULTI = 12.0
+K50_CIRCULAR = 10.2  # K_50(0, 0) for 1 Gyr (tau ~ 10^10.5 inner orbits), circular and coplanar orbits
+K50_ECC_SLOPE = 2.4  # rise of K_50 per Hill eccentricity of eccentricity dispersion
+E_CALIBRATED = 0.05  # largest eccentricity dispersion sigma_e in Pu & Wu's simulations
 
 REFERENCES = [
     "gladman1993",
@@ -48,6 +71,7 @@ REFERENCES = [
     "petit2018",
     "chambers1996",
     "pu2015",
+    "pu2015erratum",
 ]
 
 
@@ -57,6 +81,16 @@ def mutual_hill_radius(m1: float, m2: float, a1: float, a2: float, m_star: float
 
 def separation_in_hill_radii(m1: float, m2: float, a1: float, a2: float, m_star: float) -> float:
     return (a2 - a1) / mutual_hill_radius(m1, m2, a1, a2, m_star)
+
+
+def required_separation(m1: float, m2: float, e1: float, e2: float, m_star: float) -> float:
+    """Spacing (mutual Hill radii) an adjacent pair of a 3+ planet system needs to count as widely spaced.
+
+    max(DELTA_MULTI, K_50(0, 0) + 2.4 max(e_1, e_2) / e_H) with e_H = ((m_1 + m_2) / (3 M_*))^(1/3), Pu & Wu
+    (2015, Eq. 15, corrected in Pu & Wu 2016) with the pair's larger eccentricity in place of sigma_e.
+    """
+    e_hill = ((m1 + m2) / (3 * m_star)) ** (1 / 3)
+    return float(max(DELTA_MULTI, K50_CIRCULAR + K50_ECC_SLOPE * max(e1, e2) / e_hill))
 
 
 def gladman_margin(m1: float, m2: float, a1: float, a2: float, e1: float, e2: float, m_star: float) -> float:
@@ -103,9 +137,16 @@ def pair_table(real: Realization) -> list[dict[str, Any]]:
                 "gladman_critical_hill": gladman_critical_separation(b1.m, b2.m, real.m_star),
                 "gladman_margin": gladman_margin(b1.m, b2.m, a1, a2, b1.e, b2.e, real.m_star),
                 "orbits_cross": a1 * (1 + b1.e) >= a2 * (1 - b2.e),
+                "required_separation_hill": required_separation(b1.m, b2.m, b1.e, b2.e, real.m_star),
+                "e_max": max(b1.e, b2.e),
             }
         )
     return rows
+
+
+def widely_spaced(row: dict[str, Any]) -> bool:
+    """Pair of a 3+ planet system spaced as Pu & Wu (2015) require, within their eccentricity range."""
+    return bool(row["e_max"] <= E_CALIBRATED and row["separation_hill"] >= row["required_separation_hill"])
 
 
 def classify(real: Realization) -> Verdict:
@@ -114,7 +155,7 @@ def classify(real: Realization) -> Verdict:
         return Verdict.UNSTABLE
     if len(rows) == 1:
         return Verdict.STABLE
-    if all(r["separation_hill"] >= DELTA_MULTI for r in rows):
+    if all(widely_spaced(r) for r in rows):
         return Verdict.STABLE
     return Verdict.MARGINAL
 
@@ -127,6 +168,7 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
     verdict = combine(v_nom, v_draws)
     two = len(rows) == 1
     closest = min(rows, key=lambda r: r["separation_hill"])
+    tight = [r for r in rows if r["separation_hill"] < r["required_separation_hill"]]
     failing = [r["pair"] for r in rows if r["orbits_cross"] or r["gladman_margin"] <= 0]
     if failing:
         summary = (
@@ -141,15 +183,30 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
             "(eccentricities included in the test)."
         )
     elif v_nom is Verdict.STABLE:
+        tightest = min(rows, key=lambda r: r["separation_hill"] / r["required_separation_hill"])
         summary = (
-            f"Every adjacent pair is at least {DELTA_MULTI:g} mutual Hill radii apart "
-            f"(closest: {closest['pair']}, {closest['separation_hill']:.1f})."
+            f"Every adjacent pair is at least {DELTA_MULTI:g} mutual Hill radii apart and as widely spaced as "
+            f"Pu & Wu (2015) require for its eccentricities (tightest: {tightest['pair']}, "
+            f"{tightest['separation_hill']:.1f} for {tightest['required_separation_hill']:.1f} required)."
+        )
+    elif tight:
+        worst = min(tight, key=lambda r: r["separation_hill"] / r["required_separation_hill"])
+        source = "Pu & Wu 2015" + (
+            f", extrapolated beyond e = {E_CALIBRATED:g}" if worst["e_max"] > E_CALIBRATED else ""
+        )
+        summary = (
+            f"Every pair passes the two-planet limit, but {worst['pair']} is only "
+            f"{worst['separation_hill']:.1f} mutual Hill radii apart, where the heuristic threshold for its "
+            f"eccentricities is {worst['required_separation_hill']:.1f} ({source}); long-term stability is "
+            "not guaranteed by spacing alone."
         )
     else:
+        hot = [r["pair"] for r in rows if r["e_max"] > E_CALIBRATED]
         summary = (
-            f"Every pair passes the two-planet limit, but {closest['pair']} is only "
-            f"{closest['separation_hill']:.1f} mutual Hill radii apart (heuristic threshold "
-            f"{DELTA_MULTI:g}); long-term stability is not guaranteed by spacing alone."
+            f"Every pair passes the two-planet limit and the spacing threshold, but {', '.join(hot)} "
+            f"{'has' if len(hot) == 1 else 'have'} eccentricities above {E_CALIBRATED:g}, beyond the range in "
+            "which Pu & Wu (2015) calibrated the spacing needed for long-term stability; spacing alone cannot "
+            "establish it."
         )
     notes = []
     if verdict is not v_nom:
@@ -166,7 +223,7 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
         nominal_verdict=v_nom,
         summary=summary,
         draws=DrawStats.from_verdicts(v_draws) if draws else None,
-        details={"pairs": rows, "delta_multi": DELTA_MULTI},
+        details={"pairs": rows, "delta_multi": DELTA_MULTI, "e_calibrated": E_CALIBRATED},
         notes=notes,
         references=REFERENCES,
     )

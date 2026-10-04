@@ -105,6 +105,55 @@ def test_mmr_critical_amd_branches() -> None:
     assert amd.alpha_resonance_switch(10.0) == 0.0
 
 
+def test_mmr_overlap_restricted_to_petit_2017_domain() -> None:
+    """First-order overlap only above the 2:1 resonance and for eps <= eps_lim (Petit et al. 2017)."""
+    assert amd.ALPHA_2_1 == pytest.approx(0.63, abs=1e-3)
+    assert amd.alpha_circular_overlap(amd.EPS_LIM) == pytest.approx(amd.ALPHA_2_1, rel=1e-12)
+    assert amd.EPS_LIM == pytest.approx(8.20e-3, rel=0.015)  # the paper's value uses rounded constants
+    # eps = 5e-3: alpha_R = 0.58 lies below the 2:1 resonance; the switching rule alone would use C_MMR
+    eps = 5e-3
+    assert amd.alpha_resonance_switch(eps) < 0.60 < amd.ALPHA_2_1
+    assert amd.critical_amd(0.60, 1.0, eps) == (amd.critical_amd_collision(0.60, 1.0), "collision")
+    assert amd.outside_domain(0.60, eps) == "wide_of_2_1"
+    assert amd.critical_amd(0.70, 1.0, eps)[1] == "mmr_overlap" and amd.outside_domain(0.70, eps) is None
+    assert amd.critical_amd(0.40, 1.0, eps)[1] == "collision" and amd.outside_domain(0.40, eps) is None
+    # eps = 1e-2 > eps_lim: no resonance branch at all, every pair flagged
+    for alpha in (0.30, 0.55, 0.62, 0.80):
+        assert amd.critical_amd(alpha, 1.0, 1e-2)[1] == "collision"
+        assert amd.outside_domain(alpha, 1e-2) == "eps_above_limit"
+    # small eps: the domain covers every alpha
+    assert all(amd.outside_domain(alpha, 1e-4) is None for alpha in (0.1, 0.5, 0.63, 0.9))
+
+
+def test_pairs_outside_the_domain_are_never_amd_stable() -> None:
+    # circular giants just wide of the 2:1 (eps = 5e-3, alpha = 0.60): beta = 0 with either critical AMD
+    wide = real_of([2.5e-3, 2.5e-3], [1.0, 0.6**-1.5], [0.0, 0.0])
+    p = amd.analyse(wide)["pairs"][0]
+    assert p["critical_branch"] == "collision" and p["outside_domain"] == "wide_of_2_1" and p["beta"] == 0
+    assert amd.classify(wide) is Verdict.MARGINAL
+    r = amd.evaluate(wide, [])
+    assert "outside the domain" in r.summary and any("2:1" in n for n in r.notes)
+    # eps = 1e-2 > eps_lim at period ratio 2.05, where alpha_cir(eps) = 0.61 lies wide of the 2:1: no
+    # circular-overlap claim from an extrapolated formula, and no AMD-stable verdict either
+    heavy = real_of([5e-3, 5e-3], [1.0, 2.05], [0.0, 0.0])
+    p = amd.analyse(heavy)["pairs"][0]
+    assert p["alpha"] > amd.alpha_circular_overlap(1e-2)
+    assert not p["circular_overlap"] and p["outside_domain"] == "eps_above_limit"
+    assert amd.classify(heavy) is Verdict.MARGINAL
+    r = amd.evaluate(heavy, [])
+    assert not any("circular orbits" in n for n in r.notes) and any("ε_lim" in n for n in r.notes)
+    # HD 204313 b / e-like pair (eps = 0.0185, period ratio 3.6): collision criterion, at most marginal
+    far = real_of([9e-3, 9.5e-3], [1.0, 3.6], [0.05, 0.05])
+    p = amd.analyse(far)["pairs"][0]
+    assert p["critical_branch"] == "collision" and p["beta"] < 1
+    assert amd.classify(far) is Verdict.MARGINAL
+    # a light inner planet next to a heavy pair: the summary keeps beta_S
+    ups = real_of([1e-8, 5e-3, 5e-3], [1.0, 8.0, 40.0], [0.0, 0.1, 0.0])
+    r = amd.evaluate(ups, [])
+    assert [p["outside_domain"] for p in r.details["pairs"]] == [None, "eps_above_limit"]
+    assert "outside the domain" in r.summary and "β_S = 1e+04" in r.summary
+
+
 @given(e=st.floats(0, 0.4), de=st.floats(0.001, 0.3))
 def test_beta_grows_with_eccentricity_and_verdict_never_improves(e: float, de: float) -> None:
     order = {Verdict.STABLE: 0, Verdict.MARGINAL: 1, Verdict.UNSTABLE: 2}
@@ -124,11 +173,16 @@ def test_classification_cases() -> None:
     assert amd.classify(ecc_pair) is Verdict.UNSTABLE
     # AMD-unstable (resonance-overlap branch) but Hill stable: the Hill criterion is stricter than the
     # collision criterion (Petit et al. 2018), so this only happens where C_MMR < C_H
-    mid = real_of([1e-3, 1e-3], [1.0, 1.6], [0.05, 0.0])
+    mid = real_of([1e-3, 1e-3], [1.0, 1.6], [0.035, 0.0])
     info = amd.analyse(mid)["pairs"][0]
     assert info["critical_branch"] == "mmr_overlap"
     assert info["beta"] > 1 > info["beta_hill"]
     assert amd.classify(mid) is Verdict.MARGINAL
+    # neither criterion holds with C = 2 C_p, but the coplanar pair is Hill stable: not "unstable"
+    hot = real_of([1e-3, 1e-3], [1.0, 1.6], [0.05, 0.0])
+    info = amd.analyse(hot)["pairs"][0]
+    assert info["beta"] > 1 and info["beta_hill"] > 1 > info["beta_hill_coplanar"]
+    assert amd.classify(hot) is Verdict.MARGINAL
     # weakly AMD-stable: a light inner planet next to an eccentric giant
     weak = real_of([1e-8, 1e-3], [1.0, 8.0], [0.0, 0.15])
     w = amd.analyse(weak)
@@ -138,15 +192,40 @@ def test_classification_cases() -> None:
     assert amd.classify(three) is Verdict.MARGINAL
 
 
+def test_equipartition_convention_of_laskar_petit_2017() -> None:
+    """beta = 2 beta_p and beta_S = 2 beta_Sp (Laskar & Petit 2017, Sect. 6; Petit et al. 2017, Sect. 5)."""
+    ms, ps, es = [3e-5, 3e-5], [1.0, 2.2], [0.2, 0.2]
+    r = real_of(ms, ps, es)
+    info = amd.analyse(r)
+    p = info["pairs"][0]
+    # the coplanar AMD C_p, computed independently: Lambda_k / sqrt(G M_*) = m_k sqrt(a_k)
+    a = r.semi_major_axes()
+    lam = [m * math.sqrt(float(ak)) for m, ak in zip(ms, a)]
+    c_p = sum(lk * (1 - math.sqrt(1 - e**2)) for lk, e in zip(lam, es))
+    assert p["relative_amd"] == pytest.approx(c_p / lam[1])
+    assert p["beta_coplanar"] == pytest.approx(c_p / lam[1] / p["critical_amd"])
+    assert p["beta"] == pytest.approx(2 * p["beta_coplanar"])
+    assert p["beta_hill"] == pytest.approx(2 * p["beta_hill_coplanar"])
+    assert info["beta_star_coplanar"] == pytest.approx(c_p / lam[0])
+    assert info["beta_star"] == pytest.approx(2 * c_p / lam[0])
+    # AMD-stable for exactly coplanar orbits (beta_p = 0.61), but not with the AMD of the inclinations
+    assert p["beta_coplanar"] < 1 <= p["beta"]
+    assert amd.classify(r) is Verdict.MARGINAL
+    res = amd.evaluate(r, [])
+    assert any("largest β_p = 0.611" in n for n in res.notes)
+
+
 def test_evaluate_texts() -> None:
     r = amd.evaluate(real_of([3e-5, 3e-5], [1.0, 2.2], [0.0, 0.01]), [])
     assert r.verdict is Verdict.STABLE and r.summary.startswith("AMD-stable")
     r = amd.evaluate(real_of([1e-8, 1e-3], [1.0, 8.0], [0.0, 0.15]), [])
     assert r.summary.startswith("Weakly")
-    r = amd.evaluate(real_of([1e-3, 1e-3], [1.0, 1.6], [0.05, 0.0]), [])
+    r = amd.evaluate(real_of([1e-3, 1e-3], [1.0, 1.6], [0.035, 0.0]), [])
     assert "Hill stable in the AMD framework" in r.summary
+    r = amd.evaluate(real_of([1e-3, 1e-3], [1.0, 1.6], [0.05, 0.0]), [])
+    assert r.verdict is Verdict.MARGINAL and "not 'unstable'" in r.summary and "β_H,p = 0.844" in r.summary
     r = amd.evaluate(real_of([3e-5, 3e-5], [1.0, 2.2], [0.5, 0.5]), [])
-    assert r.summary.startswith("Neither")
+    assert r.summary.startswith("Neither") and "even for exactly coplanar orbits" in r.summary
     r = amd.evaluate(
         real_of([3e-5] * 3, [1.0, 1.1, 4.0], [0.4, 0.4, 0.4]),
         [real_of([3e-5] * 3, [1.0, 2.0, 4.0], [0.0] * 3)],

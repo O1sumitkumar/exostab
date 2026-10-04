@@ -16,6 +16,7 @@ from exostab.cli import app
 from exostab.data import load_system
 from exostab.indicators import Verdict
 from exostab.indicators import spock as sp
+from exostab.indicators.hill import pair_table
 from exostab.sampling import Body, Realization, realizations
 
 FAKE = """
@@ -51,6 +52,30 @@ def test_classify_and_domain() -> None:
     notes = " ".join(sp.domain_warnings(far))
     assert "mass ratio" in notes and "30 mutual Hill radii" in notes
     assert sp.domain_warnings(trio()) == []
+
+
+def three(m: float, a_ratio: float) -> Realization:
+    """Three planets of mass m (M_sun) around a solar-mass star with a constant semi-major-axis ratio."""
+    return Realization(
+        "x", 1.0, tuple(Body(f"p{k}", m, a_ratio ** (1.5 * k), 0.0, 0.0, 0.0) for k in range(3))
+    )
+
+
+def test_domain_spacing_uses_spocks_hill_radius() -> None:
+    """Tamayo et al. (2020, Eq. 1): R_H = a_i ((m_i + m_{i+1}) / M_*)^(1/3), not the Hill indicator's radius."""
+    real = three(3e-5, 2.25)
+    a = real.semi_major_axes()
+    for (_, d), a1, a2 in zip(sp.spock_spacings(real), a[:-1], a[1:]):
+        assert d == pytest.approx((a2 - a1) / (a1 * (6e-5) ** (1 / 3)))
+    # 28.3 of the Hill indicator's mutual Hill radii, but 31.9 of SPOCK's: outside the training range
+    assert all(r["separation_hill"] < 30 for r in pair_table(real))
+    assert [round(d, 1) for _, d in sp.spock_spacings(real)] == [31.9, 31.9]
+    assert any("SPOCK's convention" in n and "p0 / p1 (31.9)" in n for n in sp.domain_warnings(real))
+    # mass ratios of 1e-6: 31.0 of the Hill indicator's radii are 24.8 of SPOCK's, inside the training range
+    small = three(1e-6, 1.313)
+    assert all(r["separation_hill"] > 30 for r in pair_table(small))
+    assert all(d < 30 for _, d in sp.spock_spacings(small))
+    assert sp.domain_warnings(small) == []
 
 
 def test_spock_python_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
