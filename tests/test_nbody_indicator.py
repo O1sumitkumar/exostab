@@ -63,6 +63,7 @@ def test_draw_stats() -> None:
         ({"megno": nb.MEGNO_CHAOTIC}, "chaotic"),
         ({"status": "encounter"}, "unstable"),
         ({"status": "escape", "energy_error": 1.0}, "unstable"),
+        ({"status": "star_approach", "star_approach": "b"}, "inconclusive"),
         ({"energy_error": 1e-3}, "inconclusive"),
         ({"status": "error"}, "inconclusive"),
         ({"megno": math.nan}, "inconclusive"),
@@ -90,6 +91,13 @@ def test_evaluate_counts_and_notes() -> None:
     assert ind.verdict is M and any("fewer than" in n for n in ind.notes)
     ind = nb.evaluate([result(energy_error=1e-3)], None)
     assert ind.verdict is INC and any("energy error" in n for n in ind.notes)
+    star = result(label="draw 3", status="star_approach", star_approach="X b")
+    ind = nb.evaluate([result(), *[result(label=f"draw {k}") for k in range(19)], star], None)
+    assert ind.verdict is S and ind.details["classification_counts"]["inconclusive"] == 1  # 1 of 20 draws
+    assert "0 close encounter/escape, 1 inconclusive of 20" in ind.summary
+    assert any("draw 3: X b came closer to the star" in n and "1 of 21 runs" in n for n in ind.notes)
+    assert not any("energy error" in n for n in ind.notes)
+    assert ind.details["draws"][-1]["star_approach"] == "X b"
     ind = nb.evaluate([result(status="encounter", t_end=5.0)], None, random_phases=["X b"])
     assert ind.verdict is U and "close encounter after 5 yr" in ind.summary
     assert any("X b" in n and "random" in n for n in ind.notes)
@@ -141,6 +149,22 @@ def test_overall_verdict_is_conservative(
     assert o.verdict is expected
     if expected is not S:
         assert o.reasons
+
+
+def test_plot_samples_never_change_the_result() -> None:
+    """The catalog keeps no time series (n_samples=0), the web app 300 and the CLI 400: same numbers, same verdicts."""
+    s = two_planet_system(err=True, e=(0.3, 0.2), period_ratio=2.0)
+    results = [
+        check_system(s, CheckSettings(orbits=600, draws=2, seed=4, jobs=1, n_samples=n))
+        for n in (0, 300, 400)
+    ]
+    for res in results:
+        assert [r.energy_error for r in res.runs] == [r.energy_error for r in results[-1].runs]
+        assert res.ias15 is not None and res.ias15.energy_error == results[-1].ias15.energy_error  # type: ignore[union-attr]
+        assert {k: v.verdict for k, v in res.report.indicators.items()} == {
+            k: v.verdict for k, v in results[-1].report.indicators.items()
+        }
+        assert res.report.overall.verdict is results[-1].report.overall.verdict
 
 
 def test_check_system_end_to_end_small() -> None:

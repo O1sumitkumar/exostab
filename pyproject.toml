@@ -101,6 +101,8 @@ source = ["exostab"]
 branch = true
 concurrency = ["multiprocessing", "thread"]
 parallel = true
+# Saves the data of catalog workers stopped at the time cap. The handler runs only between Python bytecodes,
+# so build_catalog kills a worker that has not exited 5 s after SIGTERM (catalog.build.KILL_AFTER_S).
 sigterm = true
 
 [tool.coverage.report]

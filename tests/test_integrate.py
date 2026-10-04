@@ -1,8 +1,17 @@
 import math
+from dataclasses import replace
 
 import pytest
 
-from exostab.integrate import RunConfig, build_simulation, hill_radii, pericentre_timescale, run, timestep
+from exostab.integrate import (
+    ENERGY_CHECKS,
+    RunConfig,
+    build_simulation,
+    hill_radii,
+    pericentre_timescale,
+    run,
+    timestep,
+)
 from exostab.sampling import Body, Realization
 
 
@@ -57,10 +66,55 @@ def test_runs_are_deterministic() -> None:
     assert a.megno == b.megno and a.energy_error == b.energy_error
 
 
+@pytest.mark.parametrize("integrator", ["whfast", "ias15"])
+def test_sampling_never_integrates_backwards(integrator: str) -> None:
+    # 10 orbits with 400 samples: the samples are 0.025 orbits apart, closer than one step (1/30 orbit).
+    # Checkpoints a step has already passed are skipped instead of integrated to backwards.
+    config = RunConfig(n_orbits=10, integrator=integrator, n_samples=400)  # type: ignore[arg-type]
+    sampled, plain = run(pair(), config), run(pair(), replace(config, n_samples=0))
+    t = sampled.series["t"]
+    assert t == sorted(set(t))  # strictly increasing
+    assert sampled.t_end >= sampled.t_target and sampled.status == "completed"
+    # sampling leaves the trajectory alone
+    assert (sampled.t_end, sampled.megno) == (plain.t_end, plain.megno)
+    if integrator == "whfast":
+        assert sampled.dt == pytest.approx(0.1 / 30)
+
+
+def test_energy_error_is_checked_over_the_whole_run_whatever_is_kept_for_plots() -> None:
+    # Eccentric orbits: WHFast's energy error peaks at pericentre, so the value at the end is not the maximum.
+    r = pair(ratio=2.0, e=(0.3, 0.2))
+    runs = {n: run(r, RunConfig(n_orbits=2000, n_samples=n)) for n in (0, 7, 300, ENERGY_CHECKS)}
+    full = runs[ENERGY_CHECKS]
+    assert full.energy_error == max(full.series["energy_error"]) > 3 * full.series["energy_error"][-1]
+    for n, res in runs.items():
+        # the same checks in every run (draws and catalog runs keep no time series), so the same verdict
+        assert res.energy_error == full.energy_error and res.megno == full.megno
+        if n:
+            assert len(res.series["t"]) == n + 1 and max(res.series["energy_error"]) <= res.energy_error
+    assert runs[300].series["t"][-1] == full.series["t"][-1]
+    capped = run(r, RunConfig(n_orbits=2000, n_samples=ENERGY_CHECKS + 500))
+    assert capped.series["t"] == full.series["t"]  # never more samples than energy checks
+
+
 def test_close_encounter_is_detected() -> None:
     res = run(pair(ratio=1.1, m=1e-4), RunConfig(n_orbits=5000))
-    assert res.status == "encounter"
+    assert res.status == "encounter" and res.star_approach is None
     assert res.t_end < res.t_target
+
+
+@pytest.mark.parametrize("integrator", ["whfast", "ias15"])
+def test_star_approach_is_not_a_close_encounter(integrator: str) -> None:
+    # b: 0.01 Msun at P = 1 yr, e = 0.94: pericentre 0.060 AU, inside half its Hill radius (0.075 AU), so
+    # REBOUND's collision search pairs it with the star at every pericentre. c is 9.7 AU away. No two planets
+    # meet, so the run goes to the end, labelled as a star approach rather than as a close encounter.
+    real = Realization(
+        "grazer", 1.0, (Body("b", 0.01, 1.0, 0.94, 0.0, math.pi), Body("c", 1e-3, 30.0, 0.0, 0.0, 0.0))
+    )
+    assert real.semi_major_axes()[0] * 0.06 < 0.5 * hill_radii(real)[0]
+    res = run(real, RunConfig(n_orbits=30, integrator=integrator))  # type: ignore[arg-type]
+    assert res.status == "star_approach" and res.star_approach == "b"
+    assert res.t_end >= res.t_target and res.megno is not None
 
 
 def test_escape_is_detected() -> None:

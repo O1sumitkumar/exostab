@@ -5,9 +5,13 @@ Each run (the nominal parameters and every Monte Carlo draw) is integrated with 
 
 * ``regular`` (verdict stable): no close encounter or escape, and MEGNO <Y> below ``MEGNO_CHAOTIC``;
 * ``chaotic`` (verdict marginal): no close encounter or escape, but <Y> at or above ``MEGNO_CHAOTIC``;
-* ``unstable``: a close encounter or an escape happened;
+* ``unstable``: a close encounter between two planets or an escape happened;
 * ``inconclusive``: the relative energy error exceeded ``ENERGY_ERROR_MAX`` (and nothing physical
-  stopped the run), or the integration failed.
+  stopped the run), or the integration failed. The error is checked over the whole of every run, at
+  :data:`exostab.integrate.ENERGY_CHECKS` equally spaced times, whatever is kept for the plots. A run in
+  which a planet came closer to the star than half its Hill radius (status ``star_approach``) is also
+  inconclusive: that is not a planet-planet encounter, but tides, general relativity and the size of the
+  star, none of which is modelled, can decide what happens so close to the star (DECISIONS.md, D20).
 
 For quasi-periodic (regular) motion <Y> tends to 2; for chaotic motion it grows linearly with time
 (Cincotta & Simo 2000). The threshold and the run length are finite, so a "regular" run means "no
@@ -73,7 +77,7 @@ class NBodySettings:
 def classify_run(r: RunResult) -> RunClass:
     if r.status in ("encounter", "escape"):
         return "unstable"
-    if r.status == "error" or r.megno is None or not np.isfinite(r.megno):
+    if r.status in ("error", "star_approach") or r.megno is None or not np.isfinite(r.megno):
         return "inconclusive"
     if r.energy_error > ENERGY_ERROR_MAX:
         return "inconclusive"
@@ -153,12 +157,20 @@ def evaluate(
             "unstable for random phases; supply measured phases with --from-file to test the real configuration."
         )
     for r, c in zip([nominal, *draws], [c_nom, *c_draws], strict=True):
-        if c == "inconclusive" and r.status != "error":
+        if c == "inconclusive" and r.status not in ("error", "star_approach"):
             notes.append(
                 f"{r.label}: relative energy error {r.energy_error:.1e} exceeds {ENERGY_ERROR_MAX:.0e}; "
                 "no verdict for this run."
             )
             break
+    star = [r for r in (nominal, *draws) if r.status == "star_approach"]
+    if star:
+        notes.append(
+            f"{star[0].label}: {star[0].star_approach} came closer to the star than half its Hill radius "
+            f"({len(star)} of {len(draws) + 1} runs). This is not a close encounter between planets, but exostab "
+            "models neither tides, nor general relativity, nor the size of the star, which can decide what "
+            "happens so close to it; no verdict for these runs."
+        )
     years = nominal.t_target
     counts = {c: c_draws.count(c) for c in ("regular", "chaotic", "unstable", "inconclusive")}
     planned = nominal.t_target / (nominal.t_end / nominal.n_orbits_innermost) if nominal.t_end > 0 else 0.0
@@ -225,4 +237,5 @@ def _run_summary(r: RunResult, c: str) -> dict[str, object]:
         "encounter_distance_au": r.encounter_distance,
         "walltime_s": r.walltime,
         "error": r.error,
+        "star_approach": r.star_approach,
     }

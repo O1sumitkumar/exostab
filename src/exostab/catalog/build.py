@@ -2,8 +2,13 @@
 
 Each system runs in its own process with a hard wall-clock cap (``max_seconds``). A system that exceeds
 the cap is recorded with ``status = timeout`` and no verdict, rather than being given a shorter run
-silently. Systems the completion rules cannot model (for example circumbinary planets, or a planet with
-neither a mass nor a radius) are recorded with ``status = skipped`` and the reason.
+silently. Systems the completion rules cannot model (for example circumbinary planets, a planet with
+neither a mass nor a radius, or a host with a single planet row because its other planets orbit a companion
+star) are recorded with ``status = skipped`` and the reason.
+
+Each row is computed by :func:`exostab.analysis.check_system`, the function behind ``exostab check``, so for
+the same system, run length, draws and seed the verdicts are those of ``exostab check``. The catalog keeps no
+time series for plots, which does not change any result (see :mod:`exostab.integrate`).
 """
 
 from __future__ import annotations
@@ -126,6 +131,21 @@ def check_one(rows: list[Row], info: TableInfo, settings: CatalogSettings) -> di
     return row
 
 
+# Seconds a worker may take to exit after SIGTERM before it is killed. A Python-level SIGTERM handler (for
+# example coverage's ``sigterm = true``) runs only when REBOUND returns from C (sim.integrate to the next
+# energy checkpoint, which can take long for a slow system), so terminate() alone does not enforce the cap.
+KILL_AFTER_S = 5.0
+
+
+def _stop(p: Any, grace_s: float = KILL_AFTER_S) -> None:
+    """Stop worker process ``p``: SIGTERM, then SIGKILL if it is still alive after ``grace_s`` seconds."""
+    p.terminate()
+    p.join(timeout=grace_s)
+    if p.is_alive():
+        p.kill()
+        p.join()
+
+
 def _worker(rows: list[Row], info: TableInfo, settings: CatalogSettings, out: Any) -> None:
     host = str(rows[0]["hostname"])
     try:
@@ -144,9 +164,9 @@ def build_catalog(
     console: Console | None = None,
 ) -> tuple[list[Path], list[dict[str, Any]]]:
     rows, info = load_rows(refresh=refresh, offline=offline)
-    hosts = sorted(
-        ((h, rs) for h, rs in group_by_host(rows).items() if len(rs) >= 2), key=lambda x: x[0].lower()
-    )
+    # Every host of the table (sy_pnum >= 2) gets a row: a host with a single planet row, whose other planets
+    # orbit a companion star, is recorded as skipped with the reason, like any other system exostab cannot model.
+    hosts = sorted(group_by_host(rows).items(), key=lambda x: x[0].lower())
     if limit:
         hosts = hosts[:limit]
     n_workers = settings.jobs or max(1, (os.cpu_count() or 2) - 1)
@@ -176,8 +196,7 @@ def build_catalog(
                 p.join(timeout=5)
                 del active[host]
             elif time.monotonic() - start > settings.max_seconds:
-                p.terminate()
-                p.join()
+                _stop(p)
                 results[host] = _empty(
                     host, n, "timeout", f"exceeded {settings.max_seconds:g} s", settings, info
                 )

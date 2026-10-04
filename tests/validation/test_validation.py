@@ -16,7 +16,7 @@ from exostab._numerics import bisect
 from exostab.analysis import CheckSettings, check_system
 from exostab.data import load_system, load_system_file
 from exostab.indicators import Verdict, amd, hill
-from exostab.indicators.megno import classify_run
+from exostab.indicators.megno import MEGNO_CHAOTIC, classify_run
 from exostab.integrate import RunConfig, run
 from exostab.sampling import Body, Realization, realizations
 
@@ -101,19 +101,33 @@ def test_synthetic_pair_past_the_hill_limit_is_unstable() -> None:
     assert res.report.overall.verdict is Verdict.UNSTABLE
 
 
-@pytest.mark.parametrize(
-    ("delta", "expect_encounter"), [(2.5, True), (3.0, True), (4.0, False), (4.5, False)]
-)
-def test_close_encounters_stop_near_the_gladman_limit(delta: float, expect_encounter: bool) -> None:
-    """Reproduces notebook 02 of hd127195-stability: encounters stop between 3.30 and 3.35 R_H."""
-    phases = np.linspace(0.3, 2 * np.pi, 8, endpoint=False)
+PHASES = np.linspace(0.3, 2 * np.pi, 8, endpoint=False)  # starting phases of planet c (notebook 02)
+
+
+@pytest.mark.parametrize(("delta", "expect_encounter"), [(2.2, True), (4.0, False), (4.5, False)])
+def test_close_encounters_inside_and_none_beyond_the_gladman_limit(
+    delta: float, expect_encounter: bool
+) -> None:
+    """Well inside the limit every phase meets at its first conjunction (within 15 orbits); beyond it
+    (3.46 mutual Hill radii, Hill stable) no phase ever meets. Neither outcome depends on rounding."""
     met = [
         run(pair_at(delta, phase=p), RunConfig(n_orbits=5000, megno=False)).status == "encounter"
-        for p in phases
+        for p in PHASES
     ]
     assert all(met) if expect_encounter else not any(met)
     # the criterion itself: 3.46 mutual Hill radii for these masses (full form, see indicators/hill.py)
     assert hill.gladman_critical_separation(1e-5, 1e-5, 1.0) == pytest.approx(3.462, abs=0.001)
+
+
+def test_pairs_inside_the_gladman_limit_are_unstable_or_chaotic() -> None:
+    """At 3.0 mutual Hill radii the motion is chaotic, and the time to the first close encounter is a chaotic
+    transient with a long tail that depends on the last bit of the initial conditions: which phases meet
+    within a finite horizon differs between machines (docs/validation.md). What holds everywhere is that no
+    phase is regular and nearly all meet. Over 8 phases x 500 relative perturbations of 1e-14, 99.4-99.6% met
+    within 2e4 orbits, never more than 2 of 8 did not, and those stayed chaotic (<Y> > 13)."""
+    classes = [classify_run(run(pair_at(3.0, phase=p), RunConfig(n_orbits=2e4))) for p in PHASES]
+    assert all(c in ("unstable", "chaotic") for c in classes), classes
+    assert classes.count("unstable") >= 6, classes
 
 
 # ------------------------------------------------------------------------------------ 3. known systems
@@ -185,7 +199,13 @@ def test_hd127195_monte_carlo_matches_the_note(hd127195) -> None:  # type: ignor
     p_reg, p_enc = 0.67, 0.045
     assert counts["regular"] / n == pytest.approx(p_reg, abs=3 * math.sqrt(p_reg * (1 - p_reg) / n))
     assert counts["unstable"] / n == pytest.approx(p_enc, abs=3 * math.sqrt(p_enc * (1 - p_enc) / n))
-    assert counts["inconclusive"] == 0
+    # The Note has no energy criterion. exostab checks the energy error over the whole run (DECISIONS.md, D8),
+    # and a few chaotic draws exceed 1e-5 at a pericentre passage (11 of 200 measured): they are inconclusive.
+    # Each of them is chaotic by MEGNO, so they belong to the Note's chaotic draws and leave the comparison
+    # above unchanged; there are far fewer than the 20% that would make the indicator inconclusive.
+    inconclusive = [r for r in hd127195.runs[1:] if classify_run(r) == "inconclusive"]
+    assert len(inconclusive) == counts["inconclusive"] <= 0.1 * n
+    assert all(r.status == "completed" and r.megno >= MEGNO_CHAOTIC for r in inconclusive)
 
 
 def test_hd127195_every_draw_passes_the_collision_amd_test(hd127195) -> None:  # type: ignore[no-untyped-def]

@@ -74,7 +74,8 @@ def _seconds_per_orbit(real: Realization, integrator: str, min_orbits: float, mi
     while True:
         res = run(real, RunConfig(n_orbits=orbits, integrator=integrator))  # type: ignore[arg-type]
         done = max(res.n_orbits_innermost, 1.0)
-        if res.walltime >= min_wall or res.status != "completed" or orbits >= 64 * min_orbits:
+        stopped = res.status not in ("completed", "star_approach")  # a star approach does not stop a run
+        if res.walltime >= min_wall or stopped or orbits >= 64 * min_orbits:
             return res.walltime / done
         orbits *= 4
 
