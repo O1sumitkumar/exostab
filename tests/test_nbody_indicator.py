@@ -234,6 +234,37 @@ def test_check_system_with_upper_limit_masses_is_never_unstable() -> None:
     assert "masses of Test b and Test c" in res.report.overall.summary
 
 
+def test_unstable_nbody_of_a_multiple_star_system_is_not_overall_unstable() -> None:
+    """Kepler-132 (two stars): b and c, 4% apart in period, cannot orbit one star, yet exostab integrated both
+    around the host and called the system "unstable ... within the published uncertainties"."""
+    inds = {"hill": ind("hill", U), "amd": ind("amd", M), "nbody": nbody_ind(0, 20, status="encounter")}
+    assert overall_verdict(inds).verdict is U
+    o = overall_verdict(inds, n_stars=2)
+    assert o.verdict is M and "within the published uncertainties" not in o.summary
+    assert (
+        "may orbit different stars" in o.summary and "does not show that the system is unstable" in o.summary
+    )
+    assert "The system has 2 stars; only the host star is modelled." in o.reasons
+    # with upper limits as well, both reasons are given
+    o = overall_verdict(inds, upper_limits=["mass of X b"], n_stars=3)
+    assert o.verdict is M and "(mass of X b)" in o.summary and "The system has 3 stars" in o.summary
+    # a stable result is not changed by the number of stars
+    stable = {"hill": ind("hill", S), "amd": ind("amd", S), "nbody": nbody_ind(20)}
+    assert overall_verdict(stable, n_stars=2).verdict is S
+
+
+def test_check_system_passes_the_number_of_stars() -> None:
+    # Kepler-132 b and c: about 2 Earth masses, period ratio 1.038, 1.5 mutual Hill radii apart
+    s = two_planet_system(period_ratio=1.0383, m_earth=(1.92, 2.18))
+    settings = CheckSettings(orbits=300, draws=3, seed=0, jobs=1, n_samples=5, ias15_check=False)
+    res = check_system(s, settings)
+    assert res.report.indicators["nbody"].verdict is U and res.report.overall.verdict is U
+    binary = s.model_copy(update={"star": s.star.model_copy(update={"n_stars": 2})})
+    res = check_system(binary, settings)
+    assert res.report.indicators["nbody"].verdict is U and res.report.overall.verdict is M
+    assert "may orbit different stars" in res.report.overall.summary
+
+
 def hd215152_rows(mass_limit: int) -> list[dict[str, object]]:
     """HD 215152 b-e as in the archive cache of 2026-09-28: Delisle et al. (2018) orbits, Kiefer et al. (2021)
     astrometric mass upper limits (Earth masses, ``pl_bmasselim = 1``) about 300 times the m sin i."""

@@ -158,12 +158,14 @@ def _nbody_sentences(nb: IndicatorResult, allowed: str) -> list[str]:
     return out
 
 
-def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Sequence[str] = ()) -> Overall:
+def overall_verdict(
+    indicators: dict[str, IndicatorResult], *, upper_limits: Sequence[str] = (), n_stars: int = 1
+) -> Overall:
     """Conservative combination of the per-indicator verdicts.
 
     * unstable: the direct N-body integration is unstable (close encounters or escapes in the nominal run
-      and in at least 95% of the draws), and that evidence rests neither on upper limits nor on the nominal
-      run alone;
+      and in at least 95% of the draws), and that evidence rests neither on upper limits, nor on the nominal
+      run alone, nor on a single-star model of a system with several stars;
     * inconclusive: the N-body integration could not be trusted;
     * stable: every indicator says stable (including SPOCK when it is enabled), no N-body draw had a close
       encounter or escape, and Monte Carlo draws were run;
@@ -175,7 +177,11 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
     result still holds; an N-body instability, however, only constrains the limited values and gives
     "marginal", whichever input is limited (a stellar-mass limit is not a worst case). Without
     Monte Carlo draws (``--draws 0``) nothing was tested against the uncertainties, so the verdict is at most
-    "marginal". The summary is built from the draw counts and never claims more than they show.
+    "marginal". ``n_stars`` is the number of stars in the system (the archive's ``sy_snum``); only the host star
+    is modelled, so with more than one an N-body instability may come from the model and also gives "marginal":
+    the planets may orbit different stars (Kepler-132 b and c, whose periods differ by 4%, cannot stably orbit
+    one star), or a companion may change their orbits. The summary is built from the draw counts and never
+    claims more than they show.
     """
     nb = indicators["nbody"]
     others = [r for k, r in indicators.items() if k != "nbody"]
@@ -202,7 +208,7 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
         found = "Direct integration finds close encounters or escapes for the nominal parameters" + (
             f" and for {encounters} of {n} draws" if n else ""
         )
-        if not upper_limits and n:
+        if not upper_limits and n_stars == 1 and n:
             return Overall(
                 verdict=Verdict.UNSTABLE,
                 summary=found + " within the published uncertainties.",
@@ -216,10 +222,17 @@ def overall_verdict(indicators: dict[str, IndicatorResult], *, upper_limits: Seq
                 "the system does not have. It constrains those values; it does not show that the system is "
                 "unstable."
             )
+        stars = [f"The system has {n_stars} stars; only the host star is modelled."] if n_stars > 1 else []
+        if stars:
+            sentences.append(
+                f"The system has {n_stars} stars, but every planet is integrated around the host star alone: "
+                "the planets may orbit different stars, or a companion may change their orbits, so an "
+                "instability of this single-star model does not show that the system is unstable."
+            )
         return Overall(
             verdict=Verdict.MARGINAL,
             summary=" ".join(sentences + caveats),
-            reasons=not_stable + extra + caveats,
+            reasons=not_stable + extra + stars + caveats,
         )
 
     if nb.verdict is Verdict.STABLE and all(r.verdict is Verdict.STABLE for r in others):
@@ -298,7 +311,9 @@ def check_system(system: System, settings: CheckSettings, *, command: str | None
         nominal=nominal,
         nominal_run=runs[0],
         indicators=indicators,
-        overall=overall_verdict(indicators, upper_limits=upper_limit_inputs(system)),
+        overall=overall_verdict(
+            indicators, upper_limits=upper_limit_inputs(system), n_stars=system.star.n_stars
+        ),
         runtime_s=time.perf_counter() - t0,
         command=command,
     )
