@@ -3,7 +3,7 @@ user files."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from ..models import DataSource, MassKind, System
@@ -27,6 +27,7 @@ __all__ = [
     "SystemNotFoundError",
     "SystemSummary",
     "TableInfo",
+    "find_host",
     "list_systems",
     "load_rows",
     "load_system",
@@ -62,21 +63,28 @@ def system_from_rows(rows: Sequence[Row], info: TableInfo) -> System:
     )
 
 
+def find_host(name: str, hosts: Mapping[str, Sequence[Row]], info: TableInfo) -> str:
+    """:func:`~exostab.data.names.resolve_host`, saying which table was searched when the name is not found.
+
+    When the rows come from the bundled snapshot (offline, or the archive was unreachable), a real archive
+    system must not be reported as missing from the archive: the error then says that only the offline
+    snapshot was searched, and why. An ambiguous name is passed on unchanged.
+    """
+    try:
+        return resolve_host(name, hosts)
+    except SystemNotFoundError as exc:
+        if info.kind != "snapshot" or isinstance(exc, AmbiguousNameError):
+            raise
+        why = "" if info.note is None or info.note.startswith("offline snapshot") else f" ({info.note})"
+        where = f"the offline snapshot{why}, not the full archive table"
+        raise SystemNotFoundError(exc.query, exc.suggestions, where=where) from exc
+
+
 def load_system(name: str, *, refresh: bool = False, offline: bool = False) -> System:
     """Look up a multi-planet system in the archive table by host or planet name."""
     rows, info = load_rows(refresh=refresh, offline=offline)
     hosts = group_by_host(rows)
-    try:
-        host = resolve_host(name, hosts)
-    except SystemNotFoundError as exc:
-        if info.kind != "snapshot" or isinstance(exc, AmbiguousNameError):
-            raise
-        # Only the bundled snapshot was searched (offline, or the archive was unreachable): do not report a
-        # real archive system as missing from the archive.
-        why = "" if info.note is None or info.note.startswith("offline snapshot") else f" ({info.note})"
-        where = f"the offline snapshot{why}, not the full archive table"
-        raise SystemNotFoundError(exc.query, exc.suggestions, where=where) from exc
-    return system_from_rows(hosts[host], info)
+    return system_from_rows(hosts[find_host(name, hosts, info)], info)
 
 
 @dataclass(frozen=True)

@@ -231,6 +231,41 @@ def test_app_runs_headless() -> None:
     assert not at2.exception and at2.error and "No multi-planet system" in at2.error[0].value
 
 
+def test_app_says_when_only_the_snapshot_was_searched(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The web app called resolve_host directly: with the snapshot chosen, or during an archive outage without
+    # a cache, a real archive system was reported as missing from "the archive table" (F009).
+    import streamlit as st
+
+    from exostab.data import archive, store
+
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.query_params.update({"system": "HD 215152", "source": "snapshot"})
+    at.run()
+    assert not at.exception and at.error
+    message = at.error[0].value
+    assert (
+        "in the offline snapshot, not the full archive table" in message
+        and "in the archive table" not in message
+    )
+
+    def outage(where: str) -> None:
+        raise archive.ArchiveError("simulated outage")
+
+    monkeypatch.delenv("EXOSTAB_OFFLINE")
+    monkeypatch.setattr(store, "fetch_rows", outage)
+    st.cache_data.clear()  # _archive keeps the rows of earlier runs for a day
+    try:
+        at = AppTest.from_file(APP, default_timeout=60)
+        at.query_params.update({"system": "HD 215152"})
+        at.run()
+    finally:
+        st.cache_data.clear()
+    assert not at.exception and at.error
+    message = at.error[0].value
+    assert "offline snapshot" in message and "simulated outage" in message
+    assert "not the full archive table" in message
+
+
 def test_app_rejects_circumbinary_and_reports_json() -> None:
     at = AppTest.from_file(APP, default_timeout=60)
     at.query_params.update({"system": "Kepler-47", "source": "snapshot"})

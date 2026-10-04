@@ -23,9 +23,9 @@ import streamlit as st
 from .. import __version__
 from ..analysis import CheckResult, CheckSettings, check_system, settings_for_budget
 from ..budget import estimate_seconds
-from ..data import IncompleteSystemError, load_rows, system_from_rows
+from ..data import IncompleteSystemError, TableInfo, find_host, load_rows, system_from_rows
 from ..data.archive import ArchiveError, group_by_host
-from ..data.names import SystemNotFoundError, resolve_host
+from ..data.names import SystemNotFoundError
 from ..indicators import Verdict
 from ..indicators.spock import SpockUnavailableError, spock_python
 from ..models import System
@@ -78,10 +78,8 @@ def _archive(source: str) -> tuple[dict[str, list[dict[str, Any]]], str, str | N
 
 def _system(source: str, name: str) -> System:
     hosts, kind, retrieved, note = _archive(source)
-    host = resolve_host(name, hosts)
-    from ..data.store import TableInfo
-
-    return system_from_rows(hosts[host], TableInfo(kind=kind, retrieved_utc=retrieved, path=None, note=note))  # type: ignore[arg-type]
+    info = TableInfo(kind=kind, retrieved_utc=retrieved, path=None, note=note)  # type: ignore[arg-type]
+    return system_from_rows(hosts[find_host(name, hosts, info)], info)
 
 
 @st.cache_data(show_spinner=False, max_entries=256)
