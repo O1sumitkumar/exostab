@@ -118,17 +118,21 @@ def test_multi_planet_heuristic_respects_eccentricities() -> None:
     assert all(12 < r["separation_hill"] < 13.5 and r["gladman_margin"] > 0 for r in rows)
     assert hill.classify(hot) is Verdict.MARGINAL
     res = hill.evaluate(hot, [])
-    assert "13.0" in res.summary and "20.8" in res.summary and "extrapolated beyond e = 0.05" in res.summary
+    assert "13.0" in res.summary and "20.8" in res.summary and "extrapolated beyond σ_e = 0.05" in res.summary
     # inside Pu & Wu's eccentricity range: e = 0.03 needs 12.9 mutual Hill radii for these masses
     assert hill.classify(evenly_spaced(5, m, 12.5, 0.03)) is Verdict.MARGINAL
     assert hill.classify(evenly_spaced(5, m, 13.5, 0.03)) is Verdict.STABLE
     assert hill.classify(evenly_spaced(5, m, 12.5, 0.0)) is Verdict.STABLE
     res = hill.evaluate(evenly_spaced(3, m, 12.5, 0.03), [])
     assert res.verdict is Verdict.MARGINAL and "12.9" in res.summary
-    # e above 0.05 is outside the calibration even when widely spaced
+    # an eccentricity above 0.05 is never called stable, even when widely spaced (conservative cap)
     wide_hot = evenly_spaced(3, m, 40.0, 0.06)
     assert hill.classify(wide_hot) is Verdict.MARGINAL
-    assert "above 0.05" in hill.evaluate(wide_hot, []).summary
+    summary = hill.evaluate(wide_hot, []).summary
+    assert "above 0.05" in summary and "conservative" in summary
+    # 0.05 is the largest Rayleigh dispersion Pu & Wu simulated, not a limit on single eccentricities, which
+    # were often larger in their sample: the summary must not say they lie outside the calibrated range
+    assert "calibrated" not in summary and "dispersion" in summary
 
 
 def test_evaluate_summaries_and_draw_disagreement() -> None:

@@ -30,9 +30,11 @@ Three or more planets
 
     using the larger eccentricity of the pair in place of the Rayleigh dispersion sigma_e (conservative)
     and the coplanar orbits exostab models (sigma_inc = 0). DELTA_MULTI = 12 is Pu & Wu's value for
-    sigma_e ~ 0.02 and is kept as a floor. Pu & Wu explored only sigma_e <= 0.05, so a system with any
-    eccentricity above ``E_CALIBRATED`` = 0.05 is never called stable by this indicator (DECISIONS.md,
-    D12).
+    sigma_e ~ 0.02 and is kept as a floor. Pu & Wu drew each eccentricity from a Rayleigh distribution
+    with dispersion sigma_e <= 0.05, so single eccentricities somewhat above 0.05 were common in their
+    sample (61% of them for sigma_e = 0.05). As a conservative choice, exostab compares every planet's
+    eccentricity with that largest simulated dispersion, ``E_CALIBRATED`` = 0.05, and never calls a system
+    stable by this indicator if any eccentricity exceeds it (DECISIONS.md, D12).
 
 The mutual Hill radius of planets j and k is ((m_j + m_k) / (3 M_*))^(1/3) (a_j + a_k) / 2, the
 convention of Chambers et al. (1996) and Pu & Wu (2015). In these units the circular-orbit Gladman
@@ -61,7 +63,7 @@ from . import DrawStats, IndicatorResult, Verdict, combine
 DELTA_MULTI = 12.0
 K50_CIRCULAR = 10.2  # K_50(0, 0) for 1 Gyr (tau ~ 10^10.5 inner orbits), circular and coplanar orbits
 K50_ECC_SLOPE = 2.4  # rise of K_50 per Hill eccentricity of eccentricity dispersion
-E_CALIBRATED = 0.05  # largest eccentricity dispersion sigma_e in Pu & Wu's simulations
+E_CALIBRATED = 0.05  # largest dispersion sigma_e in Pu & Wu's simulations, compared with each planet's e
 
 REFERENCES = [
     "gladman1993",
@@ -145,7 +147,7 @@ def pair_table(real: Realization) -> list[dict[str, Any]]:
 
 
 def widely_spaced(row: dict[str, Any]) -> bool:
-    """Pair of a 3+ planet system spaced as Pu & Wu (2015) require, within their eccentricity range."""
+    """Pair of a 3+ planet system spaced as Pu & Wu (2015) require, with no eccentricity above E_CALIBRATED."""
     return bool(row["e_max"] <= E_CALIBRATED and row["separation_hill"] >= row["required_separation_hill"])
 
 
@@ -192,7 +194,7 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
     elif tight:
         worst = min(tight, key=lambda r: r["separation_hill"] / r["required_separation_hill"])
         source = "Pu & Wu 2015" + (
-            f", extrapolated beyond e = {E_CALIBRATED:g}" if worst["e_max"] > E_CALIBRATED else ""
+            f", extrapolated beyond σ_e = {E_CALIBRATED:g}" if worst["e_max"] > E_CALIBRATED else ""
         )
         summary = (
             f"Every pair passes the two-planet limit, but {worst['pair']} is only "
@@ -204,9 +206,9 @@ def evaluate(nominal: Realization, draws: list[Realization]) -> IndicatorResult:
         hot = [r["pair"] for r in rows if r["e_max"] > E_CALIBRATED]
         summary = (
             f"Every pair passes the two-planet limit and the spacing threshold, but {', '.join(hot)} "
-            f"{'has' if len(hot) == 1 else 'have'} eccentricities above {E_CALIBRATED:g}, beyond the range in "
-            "which Pu & Wu (2015) calibrated the spacing needed for long-term stability; spacing alone cannot "
-            "establish it."
+            f"{'has' if len(hot) == 1 else 'have'} an eccentricity above {E_CALIBRATED:g}, the largest "
+            "eccentricity dispersion in the simulations of Pu & Wu (2015); exostab does not call such pairs "
+            "stable on spacing alone (a conservative choice)."
         )
     notes = []
     if verdict is not v_nom:
