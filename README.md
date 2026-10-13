@@ -463,8 +463,8 @@ One of the five completion rules that fired for this system:
 
 ### Validation at a glance
 
-A validation suite compares exostab with physics and published results. It runs nightly in continuous integration
-(`pytest -m slow`).
+A validation suite compares exostab with physics, published solutions and the HD 127195 Research Note (submitted,
+not yet published). It runs nightly in continuous integration (`pytest -m slow`).
 
 | Test | Reference or tolerance | exostab |
 |---|---|---|
