@@ -477,7 +477,7 @@ A validation suite compares exostab with physics and published results. It runs 
 | HD 127195 Research Note inputs (20,000 orbits, 200 draws, seed 42) | 134 regular, 57 chaotic, 9 encounters; best-fit ⟨Y⟩ 2.000 | 133 regular, 51 chaotic, 5 encounters, 11 inconclusive (regular and encounter fractions within 3 binomial σ); best fit ⟨Y⟩ 1.9994 |
 
 The numbers were produced on 13 October 2026 by `scripts/validation_summary.py` and the slow test suite, with
-exostab 1.0.0, REBOUND 5.2.0, NumPy 2.5.3 and Python 3.12.11 on macOS (Apple M4 Pro), with the bundled archive
+exostab 1.0.0.dev0, REBOUND 5.2.0, NumPy 2.5.3 and Python 3.12.11 on macOS (Apple M4 Pro), with the bundled archive
 snapshot and default settings unless stated. Chaotic integrations are sensitive to floating-point rounding, so counts
 of chaotic draws can differ by one or two on other machines. The HD 127195 draws cannot match the Note one to one
 because the random number streams differ. Full results, tolerances and figures:
