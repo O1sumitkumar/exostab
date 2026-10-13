@@ -161,7 +161,8 @@ def test_kepler11_nominal_configuration_is_stable_over_the_test_horizon() -> Non
     nominal = res.runs[0]
     assert nominal.status == "completed" and nominal.n_orbits_innermost >= 1e4 - 1
     assert classify_run(nominal) == "regular"
-    assert res.ias15 is not None and res.ias15.status == "completed"
+    # regular with both integrators, as docs/validation.md states
+    assert res.ias15 is not None and res.ias15.status == "completed" and classify_run(res.ias15) == "regular"
     assert res.report.indicators["nbody"].verdict is not Verdict.UNSTABLE
     assert res.report.overall.verdict is not Verdict.UNSTABLE
 
