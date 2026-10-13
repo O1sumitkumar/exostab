@@ -85,8 +85,9 @@ answer.
     ---
 
     *Stable* only if every indicator agrees and no N-body draw has a close encounter; *unstable* only if the
-    integration shows close encounters or escapes for nearly all draws, and not when that rests on upper
-    limits alone. Mixed evidence is reported as *marginal*, with the reason.
+    integration shows close encounters or escapes for the nominal values and at least 95% of the draws, no
+    input is only an upper limit, and the system has a single star. Mixed evidence is reported as *marginal*,
+    with the reason.
 
     [:octicons-arrow-right-24: Methods](methods.md)
 
