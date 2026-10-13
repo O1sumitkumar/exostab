@@ -22,6 +22,8 @@ htmlcov/
 
 # Docs build
 site/
+# Fonts downloaded by the privacy plugin (DOCS_PRODUCTION=true)
+.cache/
 
 # Local-only session notes (not published)
 .handoff/

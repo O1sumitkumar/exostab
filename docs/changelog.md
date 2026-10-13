@@ -42,9 +42,13 @@ First public release.
   what-if sliders, a time budget, interactive figures, downloads and shareable links.
 - A weekly catalog workflow that publishes `catalog.csv`, `catalog.parquet` and `catalog_meta.json` on the branch
   `catalog-data`, a sortable catalog page in the documentation, and an optional Zenodo dataset upload.
-- Documentation (methods, data assumptions, validation with figures, CLI reference, web app, catalog) and a
-  validation suite: the inner Solar System, the Hill limit, TRAPPIST-1, GJ 876, Kepler-11 and the HD 127195
-  Research Note.
+- Documentation (methods, data assumptions, validation with figures, CLI reference, web app, catalog, citing
+  exostab) and a validation suite: the inner Solar System, the Hill limit, TRAPPIST-1, GJ 876, Kepler-11 and the
+  HD 127195 Research Note.
+- A documentation site in the colours of the exostab logo, with a landing page, link previews and fonts served
+  from the site itself; the logo set (`docs/assets/logo/`); a social preview image drawn by
+  `scripts/make_social_preview.py`; and a terminal recording of a check made by `scripts/make_demo_gif.py`.
+- Project links for Discussions and for citing exostab in the package metadata.
 - A release workflow that checks that the tag, `__version__`, `CITATION.cff` and this file agree, and tests the
   built wheel with the fast and validation suites before anything is published.
 

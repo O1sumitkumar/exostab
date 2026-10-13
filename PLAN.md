@@ -22,7 +22,8 @@ Everything planned for v0.1, v0.2 and v1.0 below is built. The first public rele
 Before tagging v1.0.0:
 
 - [ ] Push `main` and check that CI, the nightly suite and the docs deployment pass.
-- [ ] README and docs site design with the current output.
+- [x] README and docs site design with the current output (logo, landing page, Citing page, social preview,
+  demo recording).
 - [ ] Open the proposed issues listed in WHATS_NEXT.md, and close #1, #3, #4 and #5, which are implemented.
 - [ ] Release as described in RELEASING.md (version, `CITATION.cff` date and the date of the `[1.0.0]` section of
   CHANGELOG.md together).
@@ -53,6 +54,6 @@ catalog's Zenodo dataset (RELEASING.md).
   `catalog.csv`, `catalog.parquet` and `catalog_meta.json` on the branch `catalog-data` (not release assets,
   D21) and a sortable docs table.
 - [x] MkDocs Material site on GitHub Pages (Quickstart, CLI reference, Web app, Methods, Data assumptions,
-  Validation, Catalog, FAQ, Changelog).
+  Validation, Catalog, FAQ, Citing, Changelog).
 - [x] `CITATION.cff` and a draft `paper/paper.md` (JOSS; not submittable before about April 2027, D22).
 - [ ] Zenodo DOI with the first archived release.

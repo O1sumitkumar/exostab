@@ -61,6 +61,14 @@ Do not publish GitHub pre-releases for testing: Zenodo would archive them as ver
    `.streamlit/config.toml`. The app redeploys on every push to `main`.
 4. Add the app's URL to `README.md` and `docs/web.md`.
 
+## Social preview image
+
+GitHub shows a link-preview image when the repository is shared: Settings → General → Social preview → Edit →
+Upload an image, with `docs/assets/social-preview.png` (1280 × 640). The documentation site uses the same file
+for its link previews. To redraw it, for example after the logo or the TRAPPIST-1 result changes, run
+`python scripts/make_social_preview.py --font-dir <folder with Source Sans 3>`; without that font it falls back to
+DejaVu Sans and says so.
+
 ## Weekly catalog
 
 `.github/workflows/catalog.yml` runs every Monday at 04:23 UTC with no setup: it recomputes the catalog, commits
@@ -90,8 +98,16 @@ workflow so the catalog page is updated. The full log is in the run's `catalog` 
    - `src/exostab/__init__.py`: `__version__ = "X.Y.Z"`;
    - `CITATION.cff`: `version: "X.Y.Z"` and `date-released: "YYYY-MM-DD"` (the release date);
    - `CHANGELOG.md`: move the entries under "Unreleased" to a new section `## [X.Y.Z] - YYYY-MM-DD`, and copy
-     the file to `docs/changelog.md`.
-3. Commit, push to `main` and wait for CI to pass.
+     the file to `docs/changelog.md`. For 1.0.0 the section `## [1.0.0] - unreleased` already exists, below an
+     empty `## [Unreleased]` heading that `tests/test_packaging.py` requires while the version is a development
+     version: replace "unreleased" with the release date, then copy the file.
+
+   For a version after 1.0.0, also change `@v1.0.0` to `@vX.Y.Z` in the install lines of `README.md`,
+   `overrides/home.html`, `docs/index.md`, `docs/quickstart.md` and `docs/web.md`, and in the SPOCK script URL in
+   `README.md`.
+3. If the report card has changed, regenerate `docs/assets/demo.gif` with `python scripts/make_demo_gif.py` (it
+   runs the real command, so do it after setting the version) and look at it. Then commit, push to `main` and
+   wait for CI to pass.
 4. Tag and push the tag:
 
    ```bash
@@ -109,3 +125,6 @@ workflow so the catalog page is updated. The full log is in the run's `catalog` 
 6. If the workflow fails before anything is published, fix the problem on `main`, delete the tag
    (`git push --delete origin vX.Y.Z` and `git tag -d vX.Y.Z`) and tag again. Once a version is on PyPI its
    number cannot be used again: release `X.Y.Z+1` instead.
+7. Announce the release only after the tag is pushed and the GitHub release exists. The `pip` and `uvx` lines in
+   the README and on the documentation's landing page, the SPOCK setup script's URL and the release badge all
+   point to the tag, and fail or read "no releases" until then.

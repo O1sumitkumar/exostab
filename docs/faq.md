@@ -38,5 +38,6 @@ and Hill criteria reach further but make approximations. See [Methods](methods.m
 Not yet: a release on PyPI is planned. Install from GitHub as shown in the [Quickstart](quickstart.md).
 
 **How do I cite exostab?**
-Use the repository's `CITATION.cff` and cite the methods and the NASA Exoplanet Archive (see
-[Data and assumptions](data-assumptions.md)). A Zenodo DOI will be added with the first archived release.
+Use the repository's `CITATION.cff` and cite the methods and the NASA Exoplanet Archive.
+[Citing exostab](citing.md) has a BibTeX entry and the references for each indicator. A Zenodo DOI will be added
+with the first archived release.

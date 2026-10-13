@@ -26,7 +26,8 @@ say so.
 exostab check "TRAPPIST-1"
 ```
 
-The first run downloads the archive's multi-planet table (about 10 seconds) and caches it. The report card shows:
+The first run downloads the archive's multi-planet table (about 2,700 rows; 7 s on 13 October 2026) and caches
+it. The report card shows:
 
 - the parameters used, with a mark on every value that was assumed, derived, estimated or randomized;
 - one verdict per indicator, with an explanation;

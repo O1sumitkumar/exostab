@@ -142,7 +142,7 @@ answer.
 
     Then open <http://localhost:8501>. Search a system, edit its parameters, try "what if" changes with
     sliders, choose a time budget, and download the report or a shareable link to the run. The app runs on your
-    own computer; there is no hosted version yet.
+    own computer; there is no hosted version yet. More in [Web app](web.md).
 
 === "Your own parameters"
 
@@ -348,6 +348,7 @@ continuous integration.
 
 If exostab helps your work, please cite the software, the methods behind the indicators you report and the
 NASA Exoplanet Archive. [Citing exostab](citing.md) has a BibTeX entry and the list of references.
+What changed in each release is in the [changelog](changelog.md).
 
 <p class="exo-meta">
 exostab is free and open-source software under the MIT License, written by
