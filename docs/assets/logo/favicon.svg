@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="exostab">
+  <title>exostab</title>
+  <!-- exostab favicon: the mark drawn larger in its frame for 16-32 px. -->
+  <circle cx="32" cy="32" r="31.5" fill="#0F8B8D"/>
+  <path fill="#0B2A3F" d="M40.84 32C38.6 28.34 36.8 24.65 33.45 21.82C30.6 19.36 27.03 17.87 23.25 17.82C15.25 17.69 8.59 23.93 8.56 32C8.59 40.07 15.25 46.31 23.25 46.18C27.03 46.13 30.6 44.64 33.45 42.18C36.8 39.35 38.6 35.66 40.84 32ZM40.84 32C42.81 28.81 45.54 26.01 49.51 25.89C53.02 25.79 56.4 28.33 56.44 32C56.4 35.67 53.02 38.21 49.51 38.11C45.54 37.99 42.81 35.19 40.84 32Z"/>
+  <circle cx="23.31" cy="32" r="5.96" fill="#F0A23B"/>
+  <circle cx="49.48" cy="32" r="3.67" fill="#F0A23B"/>
+</svg>
