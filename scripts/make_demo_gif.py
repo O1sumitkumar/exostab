@@ -1,8 +1,8 @@
 """Render docs/assets/demo.gif from the real output of `exostab check`.
 
-The command is run for real (offline snapshot, so the result does not depend on the network); its colored
-terminal output is captured and drawn frame by frame with Pillow: the command is typed, then the report
-card appears. Nothing in the image is edited by hand.
+The command is run for real, exactly as it is typed in the recording (with --offline, the bundled snapshot,
+so the result does not depend on the network); its colored terminal output is captured and drawn frame by
+frame with Pillow: the command is typed, then the report card appears. Nothing in the image is edited by hand.
 
     python scripts/make_demo_gif.py
 """
@@ -10,6 +10,7 @@ card appears. Nothing in the image is edited by hand.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -19,7 +20,7 @@ from rich.text import Text
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "assets" / "demo.gif"
-COMMAND = 'exostab check "TRAPPIST-1"'
+COMMAND = 'exostab check "TRAPPIST-1" --offline'  # typed in the recording, and run as typed
 COLS = 96
 FONT_SIZE = 15
 BG, FG = (24, 24, 27), (228, 228, 231)
@@ -42,9 +43,10 @@ ANSI = {  # standard ANSI colour numbers -> RGB
 
 
 def capture() -> Text:
-    env = dict(os.environ, EXOSTAB_OFFLINE="1", COLUMNS=str(COLS), FORCE_COLOR="1", TERM="xterm-256color")
+    env = dict(os.environ, COLUMNS=str(COLS), FORCE_COLOR="1", TERM="xterm-256color")
+    env.pop("EXOSTAB_OFFLINE", None)  # the snapshot comes from --offline in COMMAND, as for a reader
     out = subprocess.run(
-        [sys.executable, "-m", "exostab.cli", "check", "TRAPPIST-1"],
+        [sys.executable, "-m", "exostab.cli", *shlex.split(COMMAND)[1:]],
         capture_output=True,
         text=True,
         env=env,

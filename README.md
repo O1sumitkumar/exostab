@@ -32,10 +32,10 @@
 </p>
 
 <p align="center">
-  <img alt="Terminal recording of exostab check &quot;TRAPPIST-1&quot;: a report card with the parameters of the seven planets, Hill spacing marginal, AMD stable, N-body + MEGNO marginal, overall verdict marginal, and the data-completion rules that were applied" src="https://raw.githubusercontent.com/mimitoz62/exostab/main/docs/assets/demo.gif" width="720">
+  <img alt="Terminal recording of exostab check &quot;TRAPPIST-1&quot; --offline: a report card with the parameters of the seven planets, Hill spacing marginal, AMD stable, N-body + MEGNO marginal, overall verdict marginal, and the data-completion rules that were applied" src="https://raw.githubusercontent.com/mimitoz62/exostab/main/docs/assets/demo.gif" width="720">
   <br>
-  <sub><i>Real output of <code>exostab check "TRAPPIST-1"</code> (bundled archive snapshot of 2026-09-28, default
-  settings), rendered by <a href="https://github.com/mimitoz62/exostab/blob/main/scripts/make_demo_gif.py">scripts/make_demo_gif.py</a>.
+  <sub><i>Real output of <code>exostab check "TRAPPIST-1" --offline</code> (bundled archive snapshot of 2026-09-28,
+  default settings), rendered by <a href="https://github.com/mimitoz62/exostab/blob/main/scripts/make_demo_gif.py">scripts/make_demo_gif.py</a>.
   Nothing in the image is edited by hand.</i></sub>
 </p>
 
