@@ -18,7 +18,7 @@ pre-commit install                                   # optional: run ruff and my
 ```bash
 ruff check src tests scripts && ruff format --check src tests scripts
 mypy
-pytest                      # fast suite (about 10 s), uses the bundled offline snapshot
+pytest                      # fast suite (about 15-20 s), uses the bundled offline snapshot
 pytest --cov=exostab        # coverage; CI requires at least 85%
 pytest -m slow              # validation suite (about a minute on many cores)
 mkdocs serve                # documentation preview
@@ -55,7 +55,8 @@ Tests never touch the network or your cache: `tests/conftest.py` sets `EXOSTAB_O
 python scripts/make_snapshot.py   # downloads the listed systems and rewrites src/exostab/data/snapshot/
 ```
 
-Validation numbers in `docs/validation.md` come from `scripts/validation_summary.py`; rerun it after changes
+Validation numbers and figures in `docs/validation.md` come from `scripts/validation_summary.py` and
+`scripts/validation_figures.py` (run from the repository root with `PYTHONPATH=.`); rerun both after changes
 that can affect them.
 
 ## Releases
