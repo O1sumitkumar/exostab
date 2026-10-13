@@ -70,6 +70,27 @@ def test_cell_formatting() -> None:
     assert page._cell("overall", {**row, "status": "timeout", "overall": ""})[0] == "timeout"
 
 
+def test_social_preview_svg_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EXOSTAB_OFFLINE", "1")  # the script sets it on import; restored after the test
+    preview = load("make_social_preview")
+    from matplotlib.path import Path as MPath
+
+    square = preview.svg_path("M0 0H1V1Z")
+    assert square.vertices.tolist() == [[0, 0], [1, 0], [1, 1], [0, 0]]
+    assert square.codes.tolist() == [MPath.MOVETO, MPath.LINETO, MPath.LINETO, MPath.CLOSEPOLY]
+    # relative commands, implicit linetos after a moveto, a curve, and an offset
+    shape = preview.svg_path("m1 1 1 0v1q0 1-1 1z", dx=10)
+    assert shape.vertices.tolist() == [[11, 1], [12, 1], [12, 2], [12, 3], [11, 3], [11, 1]]
+    assert shape.codes.tolist() == [
+        MPath.MOVETO,
+        MPath.LINETO,
+        MPath.LINETO,
+        MPath.CURVE3,
+        MPath.CURVE3,
+        MPath.CLOSEPOLY,
+    ]
+
+
 def test_release_notes(small_catalog: Path) -> None:
     notes = load("catalog_release_notes").notes(small_catalog)
     assert "4 multi-planet systems" in notes and "NASA Exoplanet Archive" in notes
