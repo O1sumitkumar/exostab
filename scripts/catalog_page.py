@@ -21,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "catalog.md"
 BRANCH = "https://github.com/mimitoz62/exostab/tree/catalog-data"
+PAGE = "https://mimitoz62.github.io/exostab/catalog/"
 
 # The front matter hides the navigation and table-of-contents sidebars (Material for MkDocs): the table has 12
 # columns and needs the full page width; between the sidebars it would scroll sideways.
@@ -47,6 +48,12 @@ Composite Parameters table, recomputed every week by the
     listed as skipped with the reason. A run in which a planet passes within half its Hill radius of the star
     gets no verdict. Run `exostab check "<name>"` to see every assumption, or `--from-file` with a published
     solution.
+"""
+
+# Written without a catalog folder, as in the committed docs/catalog.md and in local previews (mkdocs serve).
+PLACEHOLDER = """
+*This copy of the page has no catalog table: it was generated without a catalog. The documentation workflow builds
+the [published page]({page}) from the newest catalog on the branch [`catalog-data`]({branch}).*
 """
 
 DOWNLOAD = """**Download:** [`catalog.csv`](data/catalog.csv), [`catalog.parquet`](data/catalog.parquet) and
@@ -122,7 +129,7 @@ def _cell(key: str, row: dict[str, str]) -> tuple[str, str]:
 
 def render(folder: Path | None) -> str:
     if folder is None or not (folder / "catalog.csv").exists():
-        return HEADER.format(branch=BRANCH) + "\n*No catalog has been published yet.*\n"
+        return HEADER.format(branch=BRANCH) + PLACEHOLDER.format(branch=BRANCH, page=PAGE)
     rows = list(csv.DictReader((folder / "catalog.csv").open(encoding="utf-8")))
     meta = json.loads((folder / "catalog_meta.json").read_text(encoding="utf-8"))
     counts = Counter(r["overall"] if r["status"] == "ok" else r["status"] for r in rows)

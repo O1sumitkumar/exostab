@@ -22,4 +22,5 @@ Composite Parameters table, recomputed every week by the
     gets no verdict. Run `exostab check "<name>"` to see every assumption, or `--from-file` with a published
     solution.
 
-*No catalog has been published yet.*
+*This copy of the page has no catalog table: it was generated without a catalog. The documentation workflow builds
+the [published page](https://mimitoz62.github.io/exostab/catalog/) from the newest catalog on the branch [`catalog-data`](https://github.com/mimitoz62/exostab/tree/catalog-data).*

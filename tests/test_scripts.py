@@ -58,7 +58,8 @@ def test_catalog_page(small_catalog: Path, tmp_path: Path, monkeypatch: pytest.M
         (0,),
     ]
     placeholder = page.render(None)
-    assert "No catalog has been published yet" in placeholder and "data/catalog.csv" not in placeholder
+    assert "has no catalog table" in placeholder and "data/catalog.csv" not in placeholder
+    assert "No catalog has been published" not in placeholder  # the weekly runs have published catalogs
     monkeypatch.setattr("sys.argv", ["catalog_page.py", str(small_catalog)])
     page.main()
     written = (tmp_path / "catalog.md").read_text()
