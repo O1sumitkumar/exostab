@@ -1,0 +1,55 @@
+{% extends "main.html" %}
+
+{#-
+  Landing page (docs/index.md sets `template: home.html`): a full-width hero below the navigation tabs,
+  followed by the Markdown content of index.md. Links here are not checked by `mkdocs build --strict`,
+  so keep them few: relative links go through the `url` filter.
+-#}
+
+{% block tabs %}
+  {{ super() }}
+  <section class="exo-hero" aria-labelledby="exo-hero-title">
+    {#- The logo's Hill-region outline (docs/assets/logo/logo-mark.svg), drawn faintly as a backdrop. #}
+    <svg class="exo-hero__mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <g fill="none" stroke="#ffffff" stroke-width="0.35">
+        <circle cx="32" cy="32" r="30"/>
+        <path d="M40.07 32C38.1 28.79 36.52 25.55 33.59 23.07C31.08 20.91 27.96 19.61 24.64 19.56C17.62 19.45 11.78 24.92 11.75 32C11.78 39.08 17.62 44.55 24.64 44.44C27.96 44.39 31.08 43.09 33.59 40.93C36.52 38.45 38.1 35.21 40.07 32ZM40.07 32C41.8 29.21 44.18 26.74 47.67 26.64C50.75 26.55 53.72 28.78 53.75 32C53.72 35.22 50.75 37.45 47.67 37.36C44.18 37.26 41.8 34.79 40.07 32Z"/>
+      </g>
+    </svg>
+    <div class="md-grid md-typeset">
+      <div class="exo-hero__inner">
+        <div class="exo-hero__content">
+          <img class="exo-hero__logo" src="{{ 'assets/logo/logo-dark.svg' | url }}" width="219" height="64" alt="exostab">
+          <p class="exo-hero__eyebrow">Orbital stability for known exoplanet systems</p>
+          <h1 class="exo-hero__title" id="exo-hero-title">Is this planetary system dynamically stable?</h1>
+          <p class="exo-hero__lead">
+            exostab gives a quick, traceable first answer for any multi-planet system in the NASA Exoplanet Archive,
+            or for your own parameters: three stability indicators side by side, the published uncertainties
+            propagated, and every assumption shown.
+          </p>
+          <div class="exo-hero__actions">
+            <a href="{{ 'quickstart/' | url }}" class="md-button md-button--primary">Get started</a>
+            <a href="{{ 'web/' | url }}" class="md-button">Web app</a>
+            <a href="{{ config.repo_url }}" class="md-button">GitHub</a>
+          </div>
+          <p class="exo-hero__install"><code>pip install "exostab @ git+https://github.com/<wbr>mimitoz62/exostab<wbr>@v1.0.0"</code></p>
+          <p class="exo-hero__note">Version 1.0.0, for Python 3.10 or newer. A package on PyPI is planned.</p>
+        </div>
+        <figure class="exo-hero__demo">
+          <div class="exo-terminal">
+            <div class="exo-terminal__bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <img src="{{ 'assets/demo.gif' | url }}" width="882" height="1100"
+                 alt="A terminal running exostab check &quot;TRAPPIST-1&quot;: the report card lists the seven planets with their uncertainties, the Hill spacing (marginal), AMD (stable) and N-body + MEGNO (marginal) verdicts, the overall verdict marginal, and the data-completion rules that were applied.">
+          </div>
+          <figcaption>Real output of <code>exostab check "TRAPPIST-1"</code> with the bundled archive snapshot, recorded by <code>scripts/make_demo_gif.py</code>.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+{% endblock %}
+
+{% block content %}
+  <div class="exo-home">
+    {{ page.content }}
+  </div>
+{% endblock %}

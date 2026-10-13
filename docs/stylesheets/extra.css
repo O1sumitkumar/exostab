@@ -1,0 +1,569 @@
+/* exostab documentation theme on Material for MkDocs. The colours come from the logo
+   (docs/assets/logo/): Ink #0B2A3F, Teal #0F8B8D, Amber #F0A23B, Mist #E6EDF3 and, for dark mode only,
+   the light teal #2BB7AE. Colours are tokens, defined once per colour scheme; the components below only use
+   the tokens. Contrast ratios (WCAG) are given where text sits on a colour. */
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  --exo-ink: #0b2a3f;
+  --exo-ink-deep: #071c2b;
+  --exo-ink-deeper: #04121c;
+  --exo-teal: #0f8b8d;
+  --exo-teal-light: #2bb7ae;
+  --exo-amber: #f0a23b; /* only on Ink or as a fill: 7.0:1 against Ink, 2.1:1 against white */
+  --exo-amber-strong: #f5b860;
+  --exo-mist: #e6edf3;
+}
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--exo-ink);
+  --md-primary-fg-color--light: #1d4a68;
+  --md-primary-fg-color--dark: var(--exo-ink-deep);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.7);
+  --md-accent-fg-color: var(--exo-teal);
+  --md-accent-fg-color--transparent: rgba(15, 139, 141, 0.1);
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: rgba(255, 255, 255, 0.7);
+  --md-typeset-a-color: #0c7a7c; /* a darker teal for text: 5.1:1 on white */
+  --md-footer-bg-color: var(--exo-ink);
+  --md-footer-bg-color--dark: var(--exo-ink-deep);
+
+  --exo-icon: var(--exo-teal);
+  --exo-surface: #f5f8fa;
+  --exo-border: #dce4ea;
+  --exo-table-head: #eef3f6;
+  --exo-stable: #0b7a0b;
+  --exo-marginal: #9a6b00;
+  --exo-unstable: #c02a2a;
+  --exo-inconclusive: #5f5f69;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 204; /* the hue of Ink, so the dark background is a deep blue-grey */
+  --md-primary-fg-color: #0a2232;
+  --md-primary-fg-color--light: #163b55;
+  --md-primary-fg-color--dark: var(--exo-ink-deeper);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.7);
+  --md-accent-fg-color: var(--exo-teal-light);
+  --md-accent-fg-color--transparent: rgba(43, 183, 174, 0.12);
+  --md-accent-bg-color: var(--exo-ink);
+  --md-accent-bg-color--light: rgba(11, 42, 63, 0.7);
+  --md-typeset-a-color: var(--exo-teal-light); /* 6.3:1 on the slate background */
+  --md-footer-bg-color: #081d2b;
+  --md-footer-bg-color--dark: var(--exo-ink-deeper);
+
+  --exo-icon: var(--exo-teal-light);
+  --exo-surface: rgba(255, 255, 255, 0.035);
+  --exo-border: rgba(255, 255, 255, 0.1);
+  --exo-table-head: rgba(255, 255, 255, 0.045);
+  --exo-stable: #4ade80;
+  --exo-marginal: #facc15;
+  --exo-unstable: #f87171;
+  --exo-inconclusive: #a1a1aa;
+}
+
+/* ---------------------------------------------------------------- typography */
+
+.md-typeset h1 {
+  color: var(--md-default-fg-color);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.md-typeset h2 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.md-typeset h3 {
+  font-weight: 700;
+}
+
+/* Tables: a tinted header row, and numbers that line up. */
+.md-typeset table:not([class]) th {
+  background-color: var(--exo-table-head);
+}
+
+.md-typeset table:not([class]) td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Figures (the matplotlib PNGs have a white background): a frame that reads as a card in both schemes. */
+.md-typeset img.exo-plot,
+.md-typeset img[src*="assets/validation/"] {
+  border: 1px solid var(--exo-border);
+  border-radius: 0.4rem;
+  background-color: #ffffff;
+}
+
+.md-typeset figcaption {
+  max-width: 40rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* Buttons in content: Material draws them in the primary colour, which is too dark on the slate background. */
+[data-md-color-scheme="slate"] .md-typeset .md-button {
+  color: var(--md-typeset-a-color);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  border-color: var(--md-typeset-a-color);
+  background-color: var(--md-typeset-a-color);
+  color: var(--exo-ink-deeper);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button:focus,
+[data-md-color-scheme="slate"] .md-typeset .md-button:hover {
+  border-color: var(--exo-amber);
+  background-color: var(--exo-amber);
+  color: var(--exo-ink);
+}
+
+/* ---------------------------------------------------------------- header, tabs, footer */
+
+.md-header,
+.md-tabs {
+  background-color: var(--md-primary-fg-color);
+}
+
+.md-header__title {
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+/* The logo mark is a full-colour disk: a little larger than Material's default icon size. */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 1.6rem;
+  width: auto;
+}
+
+.md-nav__title .md-nav__button.md-logo img {
+  height: 2.4rem;
+  width: auto;
+}
+
+.md-tabs__link {
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.md-footer-meta .md-copyright a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- landing page: hero */
+
+.exo-hero {
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  background:
+    radial-gradient(ellipse 55% 70% at 86% 20%, rgba(15, 139, 141, 0.38), transparent 70%),
+    radial-gradient(ellipse 40% 55% at 6% 100%, rgba(240, 162, 59, 0.12), transparent 70%),
+    linear-gradient(170deg, var(--exo-ink) 0%, var(--exo-ink-deep) 65%, var(--exo-ink-deeper) 100%);
+}
+
+/* A few faint stars. */
+.exo-hero::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  opacity: 0.5;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 22%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 28% 68%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 41% 14%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 52% 88%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 63% 36%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 74% 8%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 86% 62%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 94% 30%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 6% 82%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 35% 42%, #fff 50%, transparent 51%);
+}
+
+/* The logo's Hill-region shape, very faint, behind the text. */
+.exo-hero__mark {
+  position: absolute;
+  top: 50%;
+  left: 34%;
+  width: 46rem;
+  height: 46rem;
+  opacity: 0.06;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.exo-hero .md-grid {
+  position: relative;
+}
+
+.exo-hero__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+  align-items: center;
+  padding: 2.2rem 0.8rem 2.6rem;
+}
+
+@media screen and (min-width: 60em) {
+  .exo-hero__inner {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 3rem;
+    padding: 3.2rem 1.2rem 3.6rem;
+  }
+}
+
+.exo-hero .exo-hero__logo {
+  display: block;
+  width: 14rem;
+  max-width: 70%;
+  height: auto;
+  margin: 0 0 1.4rem;
+}
+
+.exo-hero .exo-hero__eyebrow {
+  margin: 0 0 0.8em;
+  color: var(--exo-amber);
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.exo-hero .exo-hero__title {
+  margin: 0 0 0.5em;
+  color: #ffffff;
+  font-size: 2.1em;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
+@media screen and (min-width: 45em) {
+  .exo-hero .exo-hero__title {
+    font-size: 2.6em;
+  }
+}
+
+.exo-hero .exo-hero__lead {
+  max-width: 34em;
+  margin: 0 0 1.6em;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 1.1em;
+  line-height: 1.6;
+}
+
+.exo-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.exo-hero .md-typeset .md-button {
+  margin: 0;
+  border-color: rgba(255, 255, 255, 0.55);
+  color: #ffffff;
+}
+
+.exo-hero .md-typeset .md-button:hover,
+.exo-hero .md-typeset .md-button:focus {
+  border-color: #ffffff;
+  background-color: #ffffff;
+  color: var(--exo-ink);
+}
+
+.exo-hero .md-typeset .md-button--primary {
+  border-color: var(--exo-amber);
+  background-color: var(--exo-amber);
+  color: var(--exo-ink); /* 7.0:1 */
+}
+
+.exo-hero .md-typeset .md-button--primary:hover,
+.exo-hero .md-typeset .md-button--primary:focus {
+  border-color: var(--exo-amber-strong);
+  background-color: var(--exo-amber-strong);
+  color: var(--exo-ink);
+}
+
+.exo-hero .exo-hero__install {
+  margin: 1.4em 0 0;
+}
+
+/* The install command wraps on narrow screens rather than hiding its end behind a scroll bar. */
+.exo-hero .exo-hero__install code {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 0.45em 0.8em;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.4rem;
+  background-color: rgba(255, 255, 255, 0.07);
+  color: var(--exo-mist);
+  font-size: 0.78em;
+}
+
+.exo-hero .exo-hero__install code::before {
+  content: "$ ";
+  color: var(--exo-amber);
+}
+
+.exo-hero .exo-hero__note {
+  margin: 0.6em 0 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 0.72em;
+}
+
+.exo-hero .exo-hero__note a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* The terminal recording, in a window frame. */
+.exo-hero .exo-hero__demo {
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+@media screen and (min-width: 60em) {
+  .exo-hero .exo-hero__demo {
+    margin: 0 0 0 auto;
+  }
+}
+
+.exo-terminal {
+  overflow: hidden;
+  border-radius: 0.6rem;
+  background-color: #18181b;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 1.4rem 3rem rgba(0, 0, 0, 0.45);
+}
+
+.exo-terminal__bar {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem;
+  background-color: #27272a;
+}
+
+.exo-terminal__bar span {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background-color: #52525b;
+}
+
+.exo-terminal img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.exo-hero .exo-hero__demo figcaption {
+  max-width: none;
+  margin-top: 0.8em;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 0.7em;
+}
+
+.exo-hero .exo-hero__demo figcaption code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------- landing page: content */
+
+.exo-home h2 {
+  margin-top: 2.6em;
+  font-size: 1.7em;
+  letter-spacing: -0.02em;
+}
+
+.exo-home > h2:first-child {
+  margin-top: 0.6em;
+}
+
+.exo-home > p,
+.exo-home > .tabbed-set,
+.exo-home > .admonition {
+  max-width: 46rem;
+}
+
+.exo-home .exo-lead {
+  color: var(--md-default-fg-color--light);
+  font-size: 1.05em;
+}
+
+@media screen and (min-width: 45em) {
+  .exo-home .grid.exo-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Short options such as --spock should not break at their hyphens. */
+.exo-home :not(pre) > code {
+  white-space: nowrap;
+}
+
+.exo-home .grid.cards .twemoji.lg {
+  color: var(--exo-icon);
+}
+
+.exo-home .grid.cards > ul > li {
+  border-color: var(--exo-border);
+  border-radius: 0.5rem;
+}
+
+.exo-home .grid.cards > ul > li:hover {
+  border-color: var(--md-accent-fg-color);
+}
+
+.exo-home .exo-meta {
+  margin-top: 3em;
+  padding-top: 1.2em;
+  border-top: 1px solid var(--exo-border);
+  color: var(--md-default-fg-color--light);
+  font-size: 0.85em;
+}
+
+/* "How it works": numbered steps. */
+.exo-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.8rem;
+  margin: 1.2em 0;
+  counter-reset: exo-step;
+}
+
+.exo-step {
+  padding: 1em 1.1em 0.4em;
+  border: 1px solid var(--exo-border);
+  border-radius: 0.5rem;
+  background-color: var(--exo-surface);
+}
+
+.exo-step::before {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9em;
+  height: 1.9em;
+  margin-bottom: 0.4em;
+  border-radius: 50%;
+  background-color: var(--exo-ink);
+  color: var(--exo-amber);
+  font-weight: 700;
+  content: counter(exo-step);
+  counter-increment: exo-step;
+}
+
+[data-md-color-scheme="slate"] .exo-step::before {
+  background-color: var(--exo-teal-light);
+  color: var(--exo-ink-deeper);
+}
+
+.exo-step > p:first-of-type {
+  margin-top: 0;
+}
+
+/* Verdicts: the word carries the meaning; the colour only reinforces it. */
+.exo-verdicts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.8rem;
+  margin: 1.2em 0;
+}
+
+.exo-verdict {
+  padding: 0.9em 1.1em 0.3em;
+  border: 1px solid var(--exo-border);
+  border-top: 0.2rem solid var(--exo-verdict-color);
+  border-radius: 0.5rem;
+  background-color: var(--exo-surface);
+}
+
+.exo-verdict--stable { --exo-verdict-color: var(--exo-stable); }
+.exo-verdict--marginal { --exo-verdict-color: var(--exo-marginal); }
+.exo-verdict--unstable { --exo-verdict-color: var(--exo-unstable); }
+.exo-verdict--inconclusive { --exo-verdict-color: var(--exo-inconclusive); }
+
+.exo-verdict .exo-verdict__name {
+  margin: 0 0 0.4em;
+  color: var(--exo-verdict-color);
+  font-size: 1.05em;
+}
+
+.exo-verdict .exo-verdict__name .twemoji {
+  vertical-align: -0.15em;
+}
+
+/* Validation numbers. */
+.exo-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.8rem;
+  margin: 1.2em 0 1.6em;
+}
+
+.exo-stat {
+  padding: 1em 1.1em 0.2em;
+  border: 1px solid var(--exo-border);
+  border-radius: 0.5rem;
+  background-color: var(--exo-surface);
+  font-size: 0.85em;
+}
+
+.exo-stat p {
+  margin-top: 0;
+}
+
+.exo-stat .exo-stat__value {
+  display: block;
+  margin-bottom: 0.3em;
+  color: var(--md-default-fg-color);
+  font-size: 1.6em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+/* ---------------------------------------------------------------- admonitions in the logo's colours */
+
+/* "note" and "example" blocks (also the collapsible ones) take the teal accent instead of Material's blue and
+   purple, so the pages keep to the palette. Warnings and the other types keep their usual colours. */
+.md-typeset .admonition.note,
+.md-typeset details.note,
+.md-typeset .admonition.example,
+.md-typeset details.example {
+  border-color: var(--exo-icon);
+}
+
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary,
+.md-typeset .example > .admonition-title,
+.md-typeset .example > summary {
+  background-color: var(--md-accent-fg-color--transparent);
+}
+
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before,
+.md-typeset .example > .admonition-title::before,
+.md-typeset .example > summary::before {
+  background-color: var(--exo-icon);
+}
+
+.md-typeset .note > summary::after,
+.md-typeset .example > summary::after {
+  color: var(--exo-icon);
+}
