@@ -1,3 +1,9 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # Stability catalog
 
 exostab's three indicators for every multi-planet system in the NASA Exoplanet Archive's Planetary Systems

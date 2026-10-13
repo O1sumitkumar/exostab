@@ -21,7 +21,15 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "catalog.md"
 BRANCH = "https://github.com/mimitoz62/exostab/tree/catalog-data"
 
-HEADER = """# Stability catalog
+# The front matter hides the navigation and table-of-contents sidebars (Material for MkDocs): the table has 12
+# columns and needs the full page width; between the sidebars it would scroll sideways.
+HEADER = """---
+hide:
+  - navigation
+  - toc
+---
+
+# Stability catalog
 
 exostab's three indicators for every multi-planet system in the NASA Exoplanet Archive's Planetary Systems
 Composite Parameters table, recomputed every week by the

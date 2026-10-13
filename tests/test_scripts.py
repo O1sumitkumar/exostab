@@ -46,7 +46,8 @@ def test_catalog_page(small_catalog: Path, tmp_path: Path, monkeypatch: pytest.M
     assert "No catalog has been published yet" in placeholder and "data/catalog.csv" not in placeholder
     monkeypatch.setattr("sys.argv", ["catalog_page.py", str(small_catalog)])
     page.main()
-    assert (tmp_path / "catalog.md").read_text().startswith("# Stability catalog")
+    written = (tmp_path / "catalog.md").read_text()
+    assert written.startswith("---\nhide:") and "\n# Stability catalog\n" in written
 
 
 def test_cell_formatting() -> None:
