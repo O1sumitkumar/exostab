@@ -193,7 +193,7 @@ def test_app_reports_parameters_the_analysis_cannot_use() -> None:
     at.run()
     assert not at.exception, at.exception
     assert any("cannot be checked" in e.value for e in at.error)
-    assert at.query_params.get("run") != "1"  # the automatic run is switched off
+    assert _link(at).get("run") != "1"  # the automatic run is switched off
 
 
 def test_input_hash_changes_with_any_input() -> None:
@@ -297,6 +297,15 @@ def _slider(at: AppTest, label: str) -> float:
     return float(next(s.value for s in at.slider if s.label.startswith(label)))
 
 
+def _link(at: AppTest) -> dict[str, str]:
+    """The query parameters the app wrote, one string per key, as st.query_params reads them.
+
+    After a run, AppTest.query_params holds a list for every key up to Streamlit 1.64, and a string for a key
+    that occurs once from 1.65 on; st.query_params returns the last value of a repeated key.
+    """
+    return {k: v if isinstance(v, str) else v[-1] for k, v in at.query_params.items()}
+
+
 def test_what_if_is_not_set_by_selecting_a_planet() -> None:
     # GJ 876 c lies 15.5 times further out than d, beyond the slider's old range (1.01-10): selecting it
     # used to move c to 10 times d's period without the user touching a slider
@@ -313,7 +322,7 @@ def test_what_if_is_not_set_by_selecting_a_planet() -> None:
     assert at.session_state["state"].whatif.period_ratio == 12.0
     at.run()
     assert at.session_state["state"].whatif.period_ratio == 12.0 and _slider(at, "Period ratio") == 12.0
-    link = {k: at.query_params[k][0] for k in at.query_params}
+    link = _link(at)
     at2 = _what_if_app("GJ 876", whatif=link["whatif"])
     assert at2.session_state["state"].whatif == WhatIf(planet="GJ 876 c", period_ratio=12.0)
 
@@ -434,7 +443,7 @@ def test_budget_run_is_not_recomputed(fake_budget) -> None:  # type: ignore[no-u
     at.run()
     assert fake_budget == [(200.0, 1, 15.0)] and _caption(at) == caption
     # so does the link the app wrote, opened in a new session on the same server
-    link = {k: at.query_params[k][0] for k in at.query_params}
+    link = _link(at)
     assert link["orbits"] == "200" and link["draws"] == "1" and link["run"] == "1"
     at2 = AppTest.from_file(APP, default_timeout=120)
     at2.query_params.update(link)
