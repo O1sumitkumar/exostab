@@ -37,10 +37,11 @@ supplied by the user. It reports three indicators side by side: the Hill-stabili
 [@marchal1982; @gladman1993] with a multi-planet spacing heuristic [@chambers1996; @pu2015]; the angular
 momentum deficit (AMD) criteria [@laskar2017; @petit2017; @petit2018]; and direct N-body integrations with
 REBOUND [@rein2012] using the WHFast [@rein2015whfast] and IAS15 [@rein2015ias15] integrators and the MEGNO chaos
-indicator [@cincotta2000; @rein2016]. It repeats the analysis for Monte Carlo draws within the published
-uncertainties and combines the indicators into a deliberately conservative overall verdict. Every assumption
-made to complete missing data is recorded in a versioned JSON report next to the seed, software versions,
-integrator settings and the archive rows used.
+indicator [@cincotta2000; @rein2016]. The machine-learned SPOCK classifier [@tamayo2020] can be added as an
+optional fourth indicator. It repeats the analysis for Monte Carlo draws within the published uncertainties and
+combines the indicators into a deliberately conservative overall verdict. Every assumption made to complete
+missing data is recorded in a versioned JSON report next to the seed, software versions, integrator settings and
+the archive rows used.
 
 # Statement of need
 
@@ -74,8 +75,8 @@ against published results, and outputs that can be traced and reproduced.
 
 A contribution to REBOUND or SPOCK was considered instead of a separate package. That scope (archive access,
 data completion, reporting and a web interface) lies outside a general-purpose integrator. SPOCK 2.1.1 also
-requires REBOUND below version 5 and does not run with REBOUND 5.2, which `exostab` needs, so SPOCK is not
-integrated yet.
+requires REBOUND below version 5, while `exostab` needs REBOUND 5.2, so `exostab` runs SPOCK on request as a
+separate process in its own environment and exchanges JSON with it, without importing it.
 
 # Software design
 
@@ -90,31 +91,44 @@ astronomical units and solar masses set explicitly in REBOUND.
 
 `exostab.sampling` turns a system into a nominal set of initial conditions and seeded Monte Carlo draws. Each
 indicator in `exostab.indicators` maps its result to one of four verdicts (stable, marginal, unstable,
-inconclusive), and a verdict stands only if 95% of the draws agree with the nominal one. The overall verdict is
-"stable" only if all indicators agree and "unstable" only on direct numerical evidence of close encounters or
-escapes. N-body runs use a time step of one thirtieth of the shortest pericentre-passage time [@wisdom2015;
-@hadden2018], detect close encounters for every pair of planets, repeat the nominal run with IAS15, and are
-declared inconclusive if their relative energy error exceeds 10⁻⁵. A time-budget mode measures the integration
-speed of a system and chooses the run length and number of draws that fit. The command-line interface (Typer
-and Rich), the Streamlit web app and the catalog workflow are thin layers over the same `check_system` function,
-so all three give identical results for the same inputs and seed. The web app caches results by a hash of all
-inputs and encodes them in a shareable link.
+inconclusive), and a verdict stands only if 95% of the draws agree with the nominal one. The multi-planet spacing
+threshold grows with eccentricity [@pu2015; @pu2015erratum]. The AMD criteria assume, as their authors do for
+catalogue systems, that the unknown mutual inclinations carry as much AMD as the eccentricities, and the
+resonance-overlap criterion is used only within the domain its authors state [@petit2017]. N-body runs use a time
+step of one thirtieth of the shortest pericentre-passage time [@wisdom2015; @hadden2018], detect close encounters
+for every pair of planets, and repeat the nominal run with IAS15. A run is declared inconclusive if its relative
+energy error, checked at 1,200 times through every run, exceeds 10⁻⁵, or if a planet passes within half its Hill
+radius of the star, where unmodelled tides, relativity and stellar size matter. SPOCK, when enabled, can make the
+overall verdict marginal but never unstable. The overall verdict is "stable" only if all indicators agree, draws
+were run and no draw has a close encounter, and "unstable" only on direct numerical evidence of close encounters
+or escapes that rests neither on values published only as upper limits nor on a single-star model of a system
+with several stars. A time-budget mode measures the integration speed of a system and chooses the run length and
+number of draws that fit. The command-line interface (Typer and Rich), the Streamlit web app and the catalog
+workflow are thin layers over the same `check_system` function, so all three give identical results for the same
+inputs and seed. The web app caches results by a hash of all inputs and encodes them in a shareable link.
 
 A validation suite runs nightly in continuous integration. It checks energy conservation for the inner Solar
 System, the Hill limit for two planets, that TRAPPIST-1 [@agol2021] is never classified unstable, that GJ 876
 integrated with the four-planet solution of @rivera2010 is regular, and that the nominal Kepler-11 configuration
-[@lissauer2013] survives the test horizon. It also reproduces the HD 127195 analysis described below.
+[@lissauer2013] survives the test horizon. It also reproduces the HD 127195 analysis described below. Near the
+Hill limit the time to the first close encounter is a chaotic transient that depends on floating-point rounding,
+so those tests assert only outcomes that cannot depend on it.
 
 # Research impact statement
 
 `exostab` grew out of an N-body study of the two giant planets of the red giant HD 127195 [@figueira2026],
 submitted by the author to Research Notes of the AAS. With the inputs and settings of that study, `exostab`
-reproduces its geometry and AMD limits exactly and its Monte Carlo classification within the statistical
-tolerance: 133 of 200 draws are regular and 5 have close encounters, compared with 134 and 9 in the study.
-Running the package over the whole archive also exposed data problems of practical interest: argument-of-
-periastron values stored in radians under a degree label (HD 127195), and a time of periastron that is really
-the osculating epoch shared by all planets of GJ 876. These are documented in the repository. A weekly workflow
-recomputes the indicators for all 1,060 multi-planet hosts of the archive and publishes them as a catalog.
+reproduces its geometry exactly and, in the study's convention, its AMD limits, and its Monte Carlo
+classification within the statistical tolerance: 133 of 200 draws are regular and 5 have close encounters,
+compared with 134 and 9 in the study. Of the remaining draws, 51 are chaotic and 11 are chaotic but inconclusive,
+because their energy error exceeds the limit that `exostab` applies and the study did not; the study found 57
+chaotic draws. Building and validating the package also exposed a data problem of practical interest: a time of
+periastron that is really the osculating epoch shared by all planets of GJ 876. The archive also stores the
+HD 127195 arguments of periastron in radians under a degree label, which the study had noted; the validation
+therefore uses the study's own inputs. Both are documented in the repository. A weekly workflow recomputes the
+indicators for every host with two or more planets in the archive table (1,070 on 28 September 2026, of which
+1,034 can be modelled; the others are listed with the reason) and publishes them as a catalog on a branch of the
+repository.
 
 <!-- Author: replace or extend this section with evidence of use by others (issues, citations, teaching,
 publications) before submission; aspirational statements are not accepted by JOSS. -->
@@ -122,11 +136,11 @@ publications) before submission; aspirational statements are not accepted by JOS
 # AI usage disclosure
 
 Claude Code (Anthropic), running the model Claude Opus 5.5 (`claude-opus-5-5`), was used under the author's
-direction during September 2026 to write most of the source code, tests, documentation and a first draft of
-this paper, to check references against Crossref, arXiv and DataCite, and to extract equations from the arXiv
-sources of the cited papers. The author defined the scientific requirements, chose the methods and thresholds
-recorded in the repository's decision log, reviewed the code and the outputs, ran the validation suite, and is
-responsible for all content.
+direction during September and October 2026 to write most of the source code, tests, documentation and a first
+draft of this paper, to check references against Crossref, arXiv and DataCite, and to extract equations from the
+arXiv sources of the cited papers. The author defined the scientific requirements, chose the methods and
+thresholds recorded in the repository's decision log, reviewed the code and the outputs, ran the validation
+suite, and is responsible for all content.
 
 <!-- Author: confirm each statement above (models, versions, scope, and what you personally reviewed) before
 submission; JOSS treats an incomplete or inaccurate disclosure as a serious breach. -->

@@ -29,10 +29,15 @@ Composite Parameters table, recomputed every week by the
 
 
 !!! warning "Read the verdicts with their caveats"
-    Every system is checked with the same default settings. Missing orbital phases are drawn at random,
+    Every system is checked with the same settings. Missing orbital phases are drawn at random,
     minimum masses are used as masses, and orbits are coplanar. A resonant system can therefore look unstable
-    here, although the full solution of one paper shows it is stable (GJ 876 is the standard example). Run
-    `exostab check "<name>"` to see every assumption, or `--from-file` with a published solution.
+    here, although the full solution of one paper shows it is stable (GJ 876 is the standard example).
+    Masses and eccentricities that are only upper limits are used at the limit, with draws below it; a system
+    whose instability rests on them is shown as marginal. Systems exostab cannot model (for example circumbinary
+    planets, a planet with neither mass nor radius, or a host whose other planets orbit a companion star) are
+    listed as skipped with the reason. A run in which a planet passes within half its Hill radius of the star
+    gets no verdict. Run `exostab check "<name>"` to see every assumption, or `--from-file` with a published
+    solution.
 """
 
 DOWNLOAD = """**Download:** [`catalog.csv`](data/catalog.csv), [`catalog.parquet`](data/catalog.parquet) and
@@ -143,7 +148,8 @@ def render(folder: Path | None) -> str:
 | Horizon | Length of the N-body runs in years |
 | Flags | Number of data-completion rules applied (the CSV lists them) |
 
-The CSV has more columns: archive row names, completion rules, energy errors, versions and run times.
+The CSV has more columns: archive row names, completion rules, energy errors (`energy_error_nominal` is the
+largest relative energy error over 1,200 checks through the nominal run), versions and run times.
 """
     )
     return "\n".join(parts)

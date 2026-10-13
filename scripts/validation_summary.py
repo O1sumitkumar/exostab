@@ -1,7 +1,8 @@
-"""Print the numbers quoted in docs/validation.md (run: python scripts/validation_summary.py).
+"""Print the numbers quoted in docs/validation.md (run: PYTHONPATH=. python scripts/validation_summary.py).
 
 Uses the same settings as tests/validation/test_validation.py and the bundled offline snapshot, so the
-output is reproducible on any machine up to floating-point differences in chaotic runs.
+output is reproducible on any machine up to floating-point differences in chaotic runs. The Hill-limit
+fractions of section 2 are printed by scripts/validation_figures.py, which computes that figure.
 """
 
 from __future__ import annotations
@@ -12,9 +13,12 @@ from pathlib import Path
 
 os.environ.setdefault("EXOSTAB_OFFLINE", "1")
 
+from exostab._numerics import bisect
 from exostab.analysis import CheckSettings, check_system
 from exostab.data import load_system, load_system_file
+from exostab.indicators import amd, hill
 from exostab.indicators.hill import gladman_critical_separation
+from exostab.indicators.megno import classify_run
 from exostab.integrate import RunConfig, run
 from exostab.report import software_record
 
@@ -38,7 +42,75 @@ def summary(name: str, res) -> None:  # type: ignore[no-untyped-def]
             f"  IAS15 check: {res.ias15.status}, <Y> = {res.ias15.megno:.4f}, energy error {res.ias15.energy_error:.2e}"
         )
     print(f"  draws: {counts}")
+    pairs = rep.indicators["hill"].details["pairs"]
+    failing = [p["pair"] for p in pairs if p["orbits_cross"] or p["gladman_margin"] <= 0]
+    if failing:
+        print(f"  nominal pairs inside the Gladman limit: {', '.join(failing)}")
+    limits = [f"{f.planet} ({f.rule})" for f in rep.system.flags if f.rule.endswith("upper_limit")]
+    if limits:
+        print(f"  upper limits used as nominal values: {', '.join(limits)}")
     print(f"  total runtime {rep.runtime_s:.1f} s")
+
+
+def hd127195_note(res) -> None:  # type: ignore[no-untyped-def]
+    """The Research Note's geometry and AMD numbers, computed as the validation tests compute them, and the
+    same quantities in exostab's own AMD convention (twice the coplanar AMD, Petit et al. 2017 domain)."""
+    nom = res.realizations[0]
+    a = nom.semi_major_axes()
+    b, c = nom.bodies
+    print("\n## HD 127195: geometry and AMD (Research Note inputs)")
+    print(f"  a_b = {a[0]:.5f} AU, a_c = {a[1]:.5f} AU, period ratio {c.P / b.P:.5f}")
+    print(f"  separation {hill.pair_table(nom)[0]['separation_hill']:.4f} mutual Hill radii")
+    # The Note's convention (as in the tests): alpha from the period ratio, coplanar AMD, collision criterion.
+    al, ga = _alpha_gamma(nom)
+    cc = amd.critical_amd_collision(al, ga)
+    e_note = bisect(lambda e: amd.relative_amd(e, e, al, ga) - cc, 0.0, 0.9)
+    passing = sum(
+        amd.relative_amd(r.bodies[0].e, r.bodies[1].e, *_alpha_gamma(r))
+        < amd.critical_amd_collision(*_alpha_gamma(r))
+        for r in res.realizations
+    )
+    print(
+        f"  Note's convention: equal-eccentricity AMD limit {e_note:.4f}; collision test passed by {passing} of "
+        f"{len(res.realizations)} realizations (nominal + draws)"
+    )
+    # exostab's AMD indicator: Jacobi semi-major axes, twice the coplanar AMD, critical AMD within its domain.
+    info = amd.analyse(nom)["pairs"][0]
+    eps = info["epsilon"]
+    print(
+        f"  exostab: alpha = {info['alpha']:.4f}, alpha_R = {amd.alpha_resonance_switch(eps):.4f}, "
+        f"epsilon = {eps:.2e} (eps_lim {amd.EPS_LIM:.2e}), critical AMD branch {info['critical_branch']}"
+    )
+    e_ind = bisect(
+        lambda e: (
+            amd.EQUIPARTITION * amd.relative_amd(e, e, info["alpha"], info["gamma"]) - info["critical_amd"]
+        ),
+        0.0,
+        0.9,
+    )
+    strong_p = sum(
+        all(p["beta_coplanar"] < 1 for p in x["pairs"]) and x["beta_star_coplanar"] < 1
+        for x in (amd.analyse(r) for r in res.realizations[1:])
+    )
+    print(
+        f"  exostab: equal-eccentricity limit for beta = 1: {e_ind:.4f}; AMD indicator draws "
+        f"{res.report.indicators['amd'].draws}; draws strongly AMD-stable with the coplanar AMD alone: {strong_p}"
+    )
+    bad = [r for r in res.runs[1:] if classify_run(r) == "inconclusive"]
+    if bad:
+        print(
+            f"  inconclusive draws: {len(bad)}, statuses {sorted({r.status for r in bad})}, energy error "
+            f"{min(r.energy_error for r in bad):.2e} to {max(r.energy_error for r in bad):.2e}, <Y> "
+            f"{min(r.megno or math.nan for r in bad):.0f} to {max(r.megno or math.nan for r in bad):.0f}"
+        )
+    print(
+        f"  WHFast step of the nominal run {res.runs[0].dt * 365.25:.2f} d; P_b / 30 = {b.P * 365.25 / 30:.2f} d"
+    )
+
+
+def _alpha_gamma(r) -> tuple[float, float]:  # type: ignore[no-untyped-def]
+    """alpha from the period ratio and the mass ratio gamma, as in tests/validation/test_validation.py."""
+    return (r.bodies[0].P / r.bodies[1].P) ** (2 / 3), r.bodies[0].m / r.bodies[1].m
 
 
 def main() -> None:
@@ -69,13 +141,12 @@ def main() -> None:
         check_system(load_system("GJ 876"), CheckSettings(draws=20, seed=0)),
     )
     summary("Kepler-11 (snapshot)", check_system(load_system("Kepler-11"), CheckSettings(draws=20, seed=0)))
-    summary(
-        "HD 127195 (Research Note inputs, 200 draws, 2e4 orbits)",
-        check_system(
-            load_system_file(ROOT / "examples/hd127195_note.yaml"),
-            CheckSettings(orbits=2e4, draws=200, seed=42),
-        ),
+    note = check_system(
+        load_system_file(ROOT / "examples/hd127195_note.yaml"),
+        CheckSettings(orbits=2e4, draws=200, seed=42),
     )
+    summary("HD 127195 (Research Note inputs, 200 draws, 2e4 orbits)", note)
+    hd127195_note(note)
 
 
 if __name__ == "__main__":

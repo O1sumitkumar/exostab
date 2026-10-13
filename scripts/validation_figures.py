@@ -1,8 +1,9 @@
 """Draw the figures of docs/validation.md (run: PYTHONPATH=. python scripts/validation_figures.py).
 
 Every figure is computed here from scratch with the settings of tests/validation/test_validation.py and the
-bundled offline snapshot; nothing is copied from elsewhere except the HD 127195 Research Note's published
-counts (134 / 57 / 9 of 200), which are labelled as such.
+bundled offline snapshot; nothing is copied from elsewhere except the counts of the HD 127195 Research Note
+(134 / 57 / 9 of 200), which are labelled as such. The figure script also prints the Hill-limit fractions and
+the HD 127195 draw counts that docs/validation.md quotes.
 """
 
 from __future__ import annotations
@@ -67,7 +68,7 @@ def energy_figure() -> Path:
 
 
 def hill_figure() -> Path:
-    deltas = np.round(np.arange(2.5, 4.51, 0.1), 2)
+    deltas = np.round(np.arange(2.0, 4.51, 0.1), 2)
     phases = np.linspace(0.3, 2 * np.pi, 8, endpoint=False)
     jobs = [
         (pair_at(float(d), phase=float(p)), RunConfig(n_orbits=5000, megno=False))
@@ -75,7 +76,17 @@ def hill_figure() -> Path:
         for p in phases
     ]
     results = run_many(jobs, None)
-    met = np.array([r.status == "encounter" for r in results]).reshape(len(deltas), len(phases)).mean(axis=1)
+    grid = np.array([r.status == "encounter" for r in results]).reshape(len(deltas), len(phases))
+    met = grid.mean(axis=1)
+    orbits = np.array([r.n_orbits_innermost for r in results]).reshape(len(deltas), len(phases))
+    # The encounter times inside the limit are chaotic transients that depend on floating-point rounding
+    # (docs/validation.md), so these fractions hold for this machine and this horizon only.
+    print(
+        "Hill limit, 8 starting phases, 5,000 orbits: separation, phases with a close encounter, latest one"
+    )
+    for d, row, n in zip(deltas, grid, orbits, strict=True):
+        latest = f"{n[row].max():,.0f} orbits" if row.any() else "-"
+        print(f"  {d:.1f}: {int(row.sum())} of {len(row)}, latest {latest}")
     x = 0.5 * ((2e-5) / 3) ** (1 / 3)
     low_order = 2 * math.sqrt(3) / (1 + 2 * math.sqrt(3) * x)  # Gladman's lowest order, normalised to a_1
     full = gladman_critical_separation(1e-5, 1e-5, 1.0)
@@ -88,7 +99,7 @@ def hill_figure() -> Path:
             color=PLANET_COLORS[0],
             lw=1.5,
             ms=4,
-            label="N-body: runs with a close encounter",
+            label="N-body: phases meeting within 5,000 orbits",
         )
         ax.axvline(full, color=INK, ls="--", lw=1.0, label=f"full Gladman criterion ({full:.2f})")
         ax.axvline(
@@ -98,9 +109,12 @@ def hill_figure() -> Path:
         ax.set_ylabel("fraction of 8 starting phases")
         ax.set_ylim(-0.05, 1.05)
         ax.set_title(
-            "Two 10⁻⁵ M☉ planets on circular orbits, 5,000 orbits each", fontsize=9, loc="left", color=INK
+            "Two 10⁻⁵ M☉ planets on circular orbits, 8 phases × 5,000 orbits (one machine)",
+            fontsize=9,
+            loc="left",
+            color=INK,
         )
-        ax.legend(loc="upper right", fontsize=8)
+        ax.legend(loc="lower left", fontsize=8)
         path = OUT / "hill_limit.png"
         fig.savefig(path)
         plt.close(fig)
@@ -153,6 +167,15 @@ def hd127195_figure() -> Path:
     )
     counts = res.report.indicators["nbody"].details["classification_counts"]
     ours = [counts["regular"], counts["chaotic"], counts["unstable"]]
+    inconclusive = [r for r in res.runs[1:] if classify_run(r) == "inconclusive"]
+    why = (
+        f"energy error above {ENERGY_ERROR_MAX:g}"
+        if all(r.status == "completed" for r in inconclusive)
+        else f"energy error above {ENERGY_ERROR_MAX:g}, or a planet passing the star"
+    )
+    if inconclusive and all(r.megno is not None and r.megno >= MEGNO_CHAOTIC for r in inconclusive):
+        why += "; all chaotic by MEGNO"
+    print(f"HD 127195 draws: {counts}")
     note = [134, 57, 9]  # Research Note, Table/number N6
     n = 200
     labels = ["regular", "chaotic", "close encounter"]
@@ -172,8 +195,7 @@ def hd127195_figure() -> Path:
         if counts.get("inconclusive"):
             # the Note has no such class: say how many exostab draws the three bars leave out
             ax.set_xlabel(
-                f"{counts['inconclusive']} more exostab draws are inconclusive (relative energy error above "
-                f"{ENERGY_ERROR_MAX:g}, or a planet passing the star) and not shown",
+                f"Not shown: {counts['inconclusive']} exostab draws are inconclusive ({why})",
                 fontsize=8,
                 color=MUTED,
             )
