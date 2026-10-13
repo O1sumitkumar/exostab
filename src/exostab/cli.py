@@ -19,12 +19,13 @@ from .models import System
 
 REPO = "https://github.com/mimitoz62/exostab"
 SPOCK_ENV_SCRIPT = f"{REPO}/blob/main/scripts/make_spock_env.sh"  # not part of the package
+QUICKSTART = "https://mimitoz62.github.io/exostab/quickstart/"  # install commands (exostab is not on PyPI)
 
 app = typer.Typer(
     name="exostab",
     help="Is this planetary system dynamically stable? Hill spacing, AMD and N-body/MEGNO indicators for "
     "known exoplanet systems, with every assumption shown.",
-    epilog='Web app: python -m exostab.web (needs pip install "exostab\\[web]").',
+    epilog=f"Web app: python -m exostab.web (needs the \\[web] extra: {QUICKSTART}).",
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",

@@ -355,7 +355,7 @@ def test_what_if_with_a_cleared_period(planet: str) -> None:
     assert at.error and "a value is missing" in at.error[0].value
 
 
-def test_packaged_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_packaged_launcher(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     # `python -m exostab.web` works from an installed package: streamlit_app.py at the repository root is not
     # in the wheel
     import streamlit.web.cli as stcli
@@ -373,9 +373,13 @@ def test_packaged_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
     at.run()
     assert not at.exception, at.exception
     assert at.title[0].value == "exostab"
-    # without the [web] extra it says what to install
+    # without the [web] extra it says what to install, pointing to the install commands (exostab is not on PyPI)
     monkeypatch.setitem(sys.modules, "streamlit.web.cli", None)
+    capsys.readouterr()
     assert launcher.main([]) == 1
+    err = capsys.readouterr().err
+    assert "[web] extra" in err and "https://mimitoz62.github.io/exostab/quickstart/" in err
+    assert 'pip install "exostab[web]"' not in err
 
 
 def test_app_reports_a_broken_spock_environment(monkeypatch: pytest.MonkeyPatch) -> None:

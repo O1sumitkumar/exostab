@@ -13,7 +13,7 @@ $ exostab [OPTIONS] COMMAND [ARGS]...
 * `--version`: Show the version and exit.
 * `--help`: Show this message and exit.
 
-Web app: python -m exostab.web (needs pip install "exostab\[web]").
+Web app: python -m exostab.web (needs the \[web] extra: https://mimitoz62.github.io/exostab/quickstart/).
 
 **Commands**:
 

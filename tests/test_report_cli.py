@@ -162,8 +162,13 @@ def test_version_and_help() -> None:
     assert r.exit_code == 0 and __version__ in r.output
     r = runner.invoke(app, ["--help"])
     assert r.exit_code == 0 and "check" in r.output and "catalog" in r.output
-    # pip users have no streamlit_app.py: the help points to the packaged launcher
-    assert 'python -m exostab.web (needs pip install "exostab[web]")' in " ".join(r.output.split())
+    # pip users have no streamlit_app.py: the help points to the packaged launcher, and to the install commands
+    # for its extra (from GitHub: there is no exostab on PyPI)
+    help_text = " ".join(r.output.split())
+    assert (
+        "python -m exostab.web (needs the [web] extra: https://mimitoz62.github.io/exostab/quickstart/)"
+        in help_text
+    )
 
 
 def test_spock_message_points_to_the_environment_script(monkeypatch: pytest.MonkeyPatch) -> None:

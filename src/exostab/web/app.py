@@ -1,7 +1,8 @@
 """exostab web app (Streamlit).
 
-    pip install "exostab[web]"
     python -m exostab.web            # or, in a clone of the repository: streamlit run streamlit_app.py
+
+Both need the [web] extra (Streamlit and Plotly); docs/quickstart.md gives the install command.
 
 Search a system, edit its parameters, choose a time budget and run the same analysis as ``exostab check``.
 The run length chosen for a budget and the results are cached by a hash of every input, so a repeated view
