@@ -140,7 +140,10 @@ def check(
     draws: Annotated[
         int | None,
         typer.Option(
-            "--draws", help="Monte Carlo draws within the published uncertainties \\[default: 20].", min=0
+            "--draws",
+            help="Monte Carlo draws within the published uncertainties \\[default: 20]. With 0 nothing is "
+            "tested against the uncertainties, and the overall verdict is never stable or unstable.",
+            min=0,
         ),
     ] = None,
     budget: Annotated[
@@ -400,7 +403,14 @@ def catalog_build(
     ] = 0,
     out: Annotated[Path, typer.Option("--out", help="Output folder.")] = Path("catalog"),
     orbits: OrbitsOpt = 1e4,
-    draws: Annotated[int, typer.Option("--draws", help="Monte Carlo draws per system.", min=0)] = 10,
+    draws: Annotated[
+        int,
+        typer.Option(
+            "--draws",
+            help="Monte Carlo draws per system (with 0 no overall verdict is stable or unstable).",
+            min=0,
+        ),
+    ] = 10,
     seed: SeedOpt = 0,
     max_seconds: Annotated[
         float,

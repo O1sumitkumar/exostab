@@ -274,7 +274,7 @@ def sweep_figure(rows: Sequence[dict[str, Any]], param_label: str, title: str, p
         ax.axhline(1.0, color=MUTED, lw=0.8, ls="--")
         ax.set_yscale("log")
         ax.set_ylim(lo, hi)
-        ax.set_ylabel("largest AMD ratio β\n(AMD-stable below 1)")
+        ax.set_ylabel("largest AMD ratio β = 2β_p\n(no collisions below 1)")
         if np.isposinf(beta).any() or (beta == 0).any():
             ax.legend(fontsize=7.5, loc="best")
         ax.set_xlabel(param_label)

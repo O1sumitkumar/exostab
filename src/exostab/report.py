@@ -263,7 +263,9 @@ def build_report(
             megno_threshold=MEGNO_CHAOTIC,
             energy_error_max=ENERGY_ERROR_MAX,
             escape_factor=100.0,
-            encounter_rule="two planets closer than the mean of their Hill radii (REBOUND collision detection, line mode)",
+            encounter_rule="two planets closer than the mean of their Hill radii (REBOUND collision detection, "
+            "line mode); a planet within half its Hill radius of the star does not stop the run and makes it "
+            "inconclusive",
             budget_s=settings.budget_s,
             spock=settings.spock_python is not None,
         ),

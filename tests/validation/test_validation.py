@@ -172,7 +172,8 @@ def test_kepler11_nominal_configuration_is_stable_over_the_test_horizon() -> Non
 @pytest.fixture(scope="module")
 def hd127195():  # type: ignore[no-untyped-def]
     s = load_system_file(EXAMPLES / "hd127195_note.yaml")
-    # The Note: 200 draws, 2e4 orbits of planet b, WHFast at P_b/30, MEGNO < 2.2 regular.
+    # The Note: 200 draws, 2e4 orbits of planet b, WHFast at P_b/30, MEGNO < 2.2 regular. exostab steps at
+    # 1/30 of the shortest pericentre timescale instead: T_p/30 = 16.43 d against P_b/30 = 17.82 d.
     return check_system(s, CheckSettings(orbits=2e4, draws=200, seed=42))
 
 

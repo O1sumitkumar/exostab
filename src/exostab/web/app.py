@@ -181,7 +181,7 @@ def _sidebar(state: AppState, names: list[str]) -> None:
             ["archive", "snapshot"],
             index=0 if state.source == "archive" else 1,
             format_func=lambda s: (
-                "NASA Exoplanet Archive (live, cached)" if s == "archive" else "Offline snapshot (22 systems)"
+                "NASA Exoplanet Archive (cached copy)" if s == "archive" else "Offline snapshot (22 systems)"
             ),
             key="source_radio",
         )
@@ -367,7 +367,10 @@ def _results(result: CheckResult, state: AppState) -> None:
     )
     state.orbits, state.draws = s.orbits, s.draws
     base = st.context.url or "http://localhost:8501"
-    st.caption("Shareable link (reproduces this exact run; use the copy button):")
+    st.caption(
+        "Shareable link (same settings; the archive data and, for a long run, the run length can differ on "
+        "the server that opens it; use the copy button):"
+    )
     st.code(share_url(base, state), language=None, wrap_lines=True)
 
 
