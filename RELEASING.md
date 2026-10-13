@@ -2,7 +2,7 @@
 
 This file is for maintainers. It lists the one-time account setup for each place exostab is published, and the
 steps to cut a release. Every service below is optional except GitHub itself: a release that only reaches
-GitHub (and Zenodo) is complete.
+GitHub is complete.
 
 ## Already set up
 
@@ -37,8 +37,9 @@ To pause PyPI uploads, delete the variable or set it to anything other than `tru
 
 ## Zenodo (software DOI)
 
-Zenodo archives every published GitHub release, pre-releases included, and gives it a DOI. Its metadata (title,
-authors with ORCID, license, keywords) come from `CITATION.cff`.
+Not set up yet. Once its GitHub integration is switched on, Zenodo archives every published GitHub release,
+pre-releases included, and gives it a DOI. Its metadata (title, authors with ORCID, license, keywords) come from
+`CITATION.cff`.
 
 1. Log in at https://zenodo.org with "Log in with GitHub" and authorize Zenodo.
 2. Open https://zenodo.org/account/settings/github/, press "Sync now" if the repository is not listed, and switch
@@ -126,7 +127,8 @@ workflow so the catalog page is updated. The full log is in the run's `catalog` 
    - builds the wheel and sdist and tests the wheel on Ubuntu and macOS: ruff, mypy, the fast suite and the CLI
      with Python 3.10 and 3.14, and the validation suite (`pytest -m slow`) with Python 3.12;
    - uploads to PyPI if `PUBLISH_PYPI` is `true`;
-   - creates the GitHub release with the CHANGELOG section as notes; Zenodo archives it.
+   - creates the GitHub release with the CHANGELOG section as notes. Zenodo archives it only if its GitHub
+     integration was switched on before the release (see Zenodo above).
 6. If the workflow fails before anything is published, fix the problem on `main`, delete the tag
    (`git push --delete origin vX.Y.Z` and `git tag -d vX.Y.Z`) and tag again. Once a version is on PyPI its
    number cannot be used again: release `X.Y.Z+1` instead.

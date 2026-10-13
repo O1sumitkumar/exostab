@@ -65,5 +65,5 @@ Maintainers follow [RELEASING.md](RELEASING.md): set the version in `src/exostab
 `CITATION.cff` (with `date-released`), move the "Unreleased" changelog entries under the new version, and push a
 tag `vX.Y.Z`. The release workflow checks that these agree, builds the package, tests the built wheel, uploads
 it to PyPI with trusted publishing when the repository variable `PUBLISH_PYPI` is `true`, and creates the GitHub
-release (archived by Zenodo). RELEASING.md also covers the one-time setup of PyPI, Zenodo, Streamlit Community
-Cloud and the catalog's Zenodo dataset.
+release, which Zenodo archives once its GitHub integration is switched on. RELEASING.md also covers the one-time
+setup of PyPI, Zenodo, Streamlit Community Cloud and the catalog's Zenodo dataset.

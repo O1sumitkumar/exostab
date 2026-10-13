@@ -1,8 +1,8 @@
 name: Release
 
 # Pushing a tag vX.Y.Z builds the package, tests the built wheel (fast suite and validation suite), publishes it
-# to PyPI (only when enabled) and creates the GitHub release, which Zenodo archives. Setup and the release
-# checklist: RELEASING.md.
+# to PyPI (only when enabled) and creates the GitHub release, which Zenodo archives once its GitHub integration is
+# switched on. Setup and the release checklist: RELEASING.md.
 
 on:
   push:
