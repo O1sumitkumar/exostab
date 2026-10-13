@@ -77,6 +77,11 @@ workflow so the catalog page is updated. The full log is in the run's `catalog` 
 
 - To run it now: Actions → Weekly catalog → Run workflow, with limit `0` (all systems). A smaller limit
   publishes a partial catalog until the next full run.
+- Run it right after pushing a `main` that changes the verdict rules or the catalog columns (as the first push of
+  the 1.0.0 code does): until the run finishes (the first two runs took about 70 and 110 minutes), the catalog
+  page shows the previous catalog. A catalog computed with a version older than `RULES_VERSION` in
+  `scripts/catalog_page.py` is shown with a notice that its rules differ; raise that constant whenever the rules
+  change again.
 - Optional DOI for the catalog (a Zenodo dataset, separate from the software DOI):
   1. After the first full catalog exists, create a new upload on Zenodo with its three files (from the branch
      `catalog-data`), resource type "Dataset", and publish it. Note its record id (the number in

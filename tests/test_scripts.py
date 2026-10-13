@@ -42,6 +42,21 @@ def test_catalog_page(small_catalog: Path, tmp_path: Path, monkeypatch: pytest.M
     assert "verdict-" in text
     # beta < 1 alone is not AMD-stable: beta_S and the domain of the critical AMD also count
     assert "below 1 is AMD-stable" not in text and "β_S < 1" in text
+    assert "computed with earlier rules" not in text
+    # a catalog from before the 1.0.0 rules (the weekly runs of 0.1.0.dev0) says that its rules differ
+    old = tmp_path / "old"
+    shutil.copytree(small_catalog, old)
+    meta = json.loads((old / "catalog_meta.json").read_text())
+    (old / "catalog_meta.json").write_text(json.dumps({**meta, "exostab_version": "0.1.0.dev0"}))
+    old_text = page.render(old)
+    assert "computed with earlier rules" in old_text and "exostab 0.1.0.dev0, a development" in old_text
+    assert [page._release(v) for v in ("0.1.0.dev0", "1.0.0.dev0", "1.0.0", "1.2.3+local", "x")] == [
+        (0, 1, 0),
+        (1, 0, 0),
+        (1, 0, 0),
+        (1, 2, 3),
+        (0,),
+    ]
     placeholder = page.render(None)
     assert "No catalog has been published yet" in placeholder and "data/catalog.csv" not in placeholder
     monkeypatch.setattr("sys.argv", ["catalog_page.py", str(small_catalog)])

@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import html
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -69,6 +70,25 @@ COLUMNS = [
 ]
 VERDICTS = {"stable", "marginal", "unstable", "inconclusive"}
 
+# The verdict rules and the AMD beta column changed in 1.0.0 (CHANGELOG.md). A catalog computed with an earlier
+# version (the weekly runs before the 1.0.0 code reached main used 0.1.0.dev0) gets a notice, so that its rows are
+# not read against the caveats and column definitions of this page. Raise this when the rules change again.
+RULES_VERSION = (1, 0, 0)
+
+OLD_RULES = """
+!!! note "This catalog was computed with earlier rules"
+    It was computed with exostab {version}, a development version from before 1.0.0, whose verdict rules differ
+    from those described on this page and in [Methods](methods.md). For example, a system whose instability rests
+    on upper limits can be listed as unstable, and the column Max. AMD β holds the coplanar value β_p rather than
+    the β defined below (β = 2β_p). The next weekly run recomputes the catalog with the current version.
+"""
+
+
+def _release(version: str) -> tuple[int, ...]:
+    """(major, minor, patch) of a version string such as "1.0.0.dev0"; (0,) if it does not start with one."""
+    m = re.match(r"(\d+)\.(\d+)\.(\d+)", version)
+    return tuple(int(x) for x in m.groups()) if m else (0,)
+
 
 def _num(value: str, fmt: str) -> str:
     if value in ("", "None", "nan"):
@@ -116,6 +136,8 @@ def render(folder: Path | None) -> str:
     )
     summary = ", ".join(f"{k} {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
     parts.append(f"**Overall verdicts:** {summary}.\n")
+    if _release(str(meta["exostab_version"])) < RULES_VERSION:
+        parts.append(OLD_RULES.format(version=html.escape(str(meta["exostab_version"]))))
     parts.append(
         '<input id="catalog-filter" type="search" placeholder="Filter systems…" aria-label="Filter systems">\n'
     )
