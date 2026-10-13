@@ -1,46 +1,152 @@
 site_name: exostab
-site_description: Honest, traceable orbital-stability indicators for known exoplanet systems
+# GitHub Pages, deployed by .github/workflows/docs.yml. Needed for the sitemap, canonical links, the 404 page,
+# instant loading and the link-preview image.
+site_url: https://mimitoz62.github.io/exostab/
+site_description: >-
+  Is this planetary system dynamically stable? Hill spacing, angular momentum deficit and N-body/MEGNO
+  indicators for known exoplanet systems, with the published uncertainties propagated and every assumption shown.
 site_author: Mehmet Öz
 repo_url: https://github.com/mimitoz62/exostab
 repo_name: mimitoz62/exostab
 edit_uri: edit/main/docs/
-copyright: MIT License, Mehmet Öz
+copyright: >-
+  Copyright &copy; 2026 Mehmet Öz &middot; exostab is released under the
+  <a href="https://github.com/mimitoz62/exostab/blob/main/LICENSE">MIT License</a>
 
 theme:
   name: material
-  features:
-    - navigation.sections
-    - content.code.copy
+  custom_dir: overrides
+  language: en
+  logo: assets/logo/logo-mark.svg
+  favicon: assets/logo/favicon.svg  # PNG fallback and apple-touch-icon: overrides/main.html
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil-outline
+  # Source Sans 3 is also the typeface of the logo's wordmark. On the published site the privacy plugin
+  # serves the fonts from the site itself.
+  font:
+    text: Source Sans 3
+    code: JetBrains Mono
   palette:
-    - scheme: default
-      toggle: {icon: material/weather-night, name: Dark mode}
-    - scheme: slate
-      toggle: {icon: material/weather-sunny, name: Light mode}
+    # Follow the operating system until the reader picks a scheme with the toggle.
+    # The colours are defined in docs/stylesheets/extra.css.
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Follow the system setting
+  features:
+    - content.action.edit
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - content.tooltips
+    - navigation.footer
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+
+plugins:
+  - search:
+      separator: '[\s​\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  # Built into Material for MkDocs. It downloads the web fonts at build time and serves them from the site, so
+  # readers' browsers make no requests to Google. It runs only for the published site (DOCS_PRODUCTION=true in
+  # .github/workflows/docs.yml), so local and pull-request builds stay fast and work offline.
+  - privacy:
+      enabled: !ENV [DOCS_PRODUCTION, false]
+
+# No analytics, no cookies and no consent banner: the site does not track its readers.
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/mimitoz62/exostab
+      name: exostab on GitHub
+    - icon: fontawesome/brands/orcid
+      link: https://orcid.org/0009-0007-1005-7640
+      name: Mehmet Öz on ORCID
+
+extra_css:
+  - stylesheets/extra.css
+  - stylesheets/catalog.css
+extra_javascript:
+  - javascripts/catalog.js
+
+watch:
+  - overrides
+
+# Fail the strict build on links to missing pages or headings.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
 
 nav:
   - Home: index.md
-  - Quickstart: quickstart.md
-  - CLI reference: cli.md
-  - Web app: web.md
-  - Methods: methods.md
-  - Data and assumptions: data-assumptions.md
-  - Validation: validation.md
+  - Get started:
+      - Quickstart: quickstart.md
+      - Web app: web.md
+      - CLI reference: cli.md
+  - Science:
+      - Methods: methods.md
+      - Data and assumptions: data-assumptions.md
+      - Validation: validation.md
   - Catalog: catalog.md
-  - FAQ: faq.md
-  - Changelog: changelog.md
-
-extra_javascript:
-  - javascripts/catalog.js
-extra_css:
-  - stylesheets/catalog.css
+  - About:
+      - FAQ: faq.md
+      - Citing exostab: citing.md
+      - Changelog: changelog.md
+      - Design decisions: https://github.com/mimitoz62/exostab/blob/main/DECISIONS.md
+      - Contributing: https://github.com/mimitoz62/exostab/blob/main/CONTRIBUTING.md
 
 markdown_extensions:
+  - abbr
   - admonition
+  - attr_list
+  - def_list
+  - footnotes
   - md_in_html
   - tables
-  - toc: {permalink: true}
+  - toc:
+      permalink: true
+      title: On this page
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  # Lets a page include a file, e.g. `--8<-- "CHANGELOG.md"`; a missing file fails the build.
+  - pymdownx.snippets:
+      check_paths: true
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
