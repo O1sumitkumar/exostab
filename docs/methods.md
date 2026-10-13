@@ -89,13 +89,14 @@ Two refinements:
 - Close pairs can become chaotic through overlapping *mean-motion resonances*, where the orbital periods are near
   simple ratios such as 3:2. This happens before their orbits cross. Petit, Laskar & Boué (2017) derived a smaller
   critical AMD for this case. They state that it applies only inside the 2:1 resonance (period ratio below 2), and
-  they left out pairs whose combined mass exceeds about 0.8% of the star's (ε = (m + m')/M★ above
-  8.1 × 10⁻³). exostab uses it only within that domain, and the collision criterion elsewhere. Below the paper's
-  switching point (α ≤ α_R, with α = a/a') the paper itself uses the collision criterion, for any ε. A pair above
-  the switching point but outside the stated domain is flagged: its β uses the collision criterion, and the AMD
-  indicator never calls the system stable, because no published AMD criterion covers resonance overlap there.
-  If the planets are so close that resonances overlap even for circular orbits, β is infinite (written as the
-  string "inf" in `report.json`, which has no infinite numbers; NaN is written as null).
+  they left out pairs whose combined mass exceeds about 0.8% of the star's (ε = (m + m')/M★ above 8.20 × 10⁻³).
+  exostab uses it only within that domain, and the collision criterion elsewhere. Its mass limit is 8.11 × 10⁻³, the
+  exact value of the paper's limit, which the paper computes from rounded constants (DECISIONS.md, D14). Below the
+  paper's switching point (α ≤ α_R, with α = a/a') the paper itself uses the collision criterion, for any ε. A pair
+  above the switching point but outside the stated domain is flagged: its β uses the collision criterion, and the AMD
+  indicator never calls the system stable, because no published AMD criterion covers resonance overlap there. If the
+  planets are so close that resonances overlap even for circular orbits, β is infinite (written as the string "inf"
+  in `report.json`, which has no infinite numbers; NaN is written as null).
 - For two planets, Petit, Laskar & Boué (2018) wrote the Hill criterion in AMD form. exostab uses it to tell
   "AMD-unstable but Hill stable" (marginal) from "neither" (unstable).
 
