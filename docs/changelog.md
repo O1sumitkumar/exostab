@@ -16,15 +16,14 @@ First public release.
   Systems Composite Parameters table (`pscomppars`), or for a system described in a YAML file (`--from-file`),
   with a report card, `report.json`, `orbits.png` and `megno.png`.
 - Three indicators, each giving stable, marginal, unstable or inconclusive:
-  - Hill spacing: the Gladman (1993) two-planet criterion, and for three or more planets a spacing heuristic
-    whose required spacing grows with the eccentricities (Pu & Wu 2015, 2016);
-  - angular momentum deficit (Laskar & Petit 2017), with the resonance-overlap criterion of Petit, Laskar & Boué
-    (2017) within the domain the paper states, and the Hill criterion in AMD form for two planets (Petit, Laskar
-    & Boué 2018); the unknown mutual inclinations are assumed to carry as much AMD as the eccentricities
-    (β = 2β_p);
-  - direct N-body integration with REBOUND (WHFast, with an IAS15 check of the nominal run) and the MEGNO chaos
-    indicator. Close encounters are detected for every pair of planets, the energy error is checked at 1,200
-    times in every run, and a run in which a planet passes very close to the star gets no verdict.
+    - Hill spacing: the Gladman (1993) two-planet criterion, and for three or more planets a spacing heuristic whose
+      required spacing grows with the eccentricities (Pu & Wu 2015, 2016);
+    - angular momentum deficit (Laskar & Petit 2017), with the resonance-overlap criterion of Petit, Laskar & Boué
+      (2017) within the domain the paper states, and the Hill criterion in AMD form for two planets (Petit, Laskar &
+      Boué 2018); the unknown mutual inclinations are assumed to carry as much AMD as the eccentricities (β = 2β_p);
+    - direct N-body integration with REBOUND (WHFast, with an IAS15 check of the nominal run) and the MEGNO chaos
+      indicator. Close encounters are detected for every pair of planets, the energy error is checked at 1,200 times
+      in every run, and a run in which a planet passes very close to the star gets no verdict.
 - An optional fourth indicator, the SPOCK classifier (Tamayo et al. 2020), run with `--spock` in a separate
   environment built by `scripts/make_spock_env.sh`.
 - Monte Carlo draws within the published uncertainties (`--draws`, reproducible with `--seed`), an optional
