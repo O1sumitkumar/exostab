@@ -82,6 +82,23 @@
   font-weight: 700;
 }
 
+/* Inline code keeps flag and option names whole. Material lets it break between any two characters
+   (word-break: break-word), which split names such as omega_randomized ("omega_randomize" / "d") in narrow
+   table columns, and browsers also break after a hyphen ("-" / "-from-file"). As an inline block, a code span
+   that does not fit at the end of a line moves to the next one whole; one longer than the line wraps inside its
+   box, at spaces and hyphens, and within a word only if the word alone is longer than the line. In a table cell
+   it stays on one line and its column is at least that wide (tables scroll sideways on small screens). */
+.md-typeset :not(pre) > code {
+  display: inline-block;
+  max-width: 100%;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.md-typeset td > code {
+  white-space: nowrap;
+}
+
 /* Tables: a tinted header row, and numbers that line up. */
 .md-typeset table:not([class]) th {
   background-color: var(--exo-table-head);
