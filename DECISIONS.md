@@ -440,8 +440,10 @@ marginal to inconclusive (3 star-approach draws, 5 of 20 inconclusive).
   more planets, with 10,000 orbits of the innermost planet, 10 draws, seed 0 and a cap of **300 s of wall time
   per system** (systems over the cap are listed as "timeout"). A full local run on 2026-09-28 (1,060 hosts, 13
   workers on an Apple M4 Pro) took 9.3 minutes, 6,436 CPU-seconds in total, 46 s for the slowest system; no
-  system timed out at the 120 s default. A 4-core GitHub runner should need roughly 1–1.5 hours (estimate, not yet
-  measured).
+  system timed out at the 120 s default. On GitHub's `ubuntu-latest` runner, the step "Build the catalog" of the
+  two scheduled runs so far took 109 minutes (2026-10-05) and 68 minutes (2026-10-12), with the code of exostab
+  0.1.0.dev0 (step times from the GitHub API); the earlier estimate of 1–1.5 hours was too low for the first run.
+  How long the current code takes there has not been measured.
 - Results go to the branch `catalog-data` (one commit per week, dated CSV copies in `archive/`), not to a GitHub
   release: Zenodo archives every published GitHub release, pre-releases included, as a new version of the
   software record (invenio-github 7.1.2 source, checked 2026-09-28), which would mix weekly data into the
