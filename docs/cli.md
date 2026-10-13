@@ -17,9 +17,9 @@ Web app: python -m exostab.web (needs the \[web] extra: https://mimitoz62.github
 
 **Commands**:
 
-* `check`: Stability report card for one system...
-* `sweep`: Vary one parameter of one planet and...
-* `list`: List multi-planet systems in the archive...
+* `check`: Stability report card for one system.
+* `sweep`: Vary one parameter of one planet.
+* `list`: List multi-planet systems in the archive.
 * `catalog`: Batch stability catalog of archive systems.
 
 ## `exostab check`
@@ -118,7 +118,7 @@ $ exostab catalog [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `build`: Compute indicators for every multi-planet...
+* `build`: Compute the catalog of multi-planet systems.
 
 ### `exostab catalog build`
 

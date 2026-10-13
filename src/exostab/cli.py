@@ -126,7 +126,9 @@ FileOpt = Annotated[
 ]
 
 
-@app.command()
+# Each command has a short help for the command lists (exostab --help, docs/cli.md): without one, Typer's docs
+# generator cuts the docstring's first sentence at about 45 characters and ends it with "...".
+@app.command(short_help="Stability report card for one system.")
 def check(
     name: Annotated[str | None, typer.Argument(help='Host or planet name, e.g. "TRAPPIST-1".')] = None,
     from_file: FileOpt = None,
@@ -257,7 +259,7 @@ def check(
     console.print(f"[dim]Finished in {result.report.runtime_s:.1f} s.[/dim]")
 
 
-@app.command()
+@app.command(short_help="Vary one parameter of one planet.")
 def sweep(
     name: Annotated[str | None, typer.Argument(help="Host or planet name.")] = None,
     planet: Annotated[str, typer.Option("--planet", help="Planet letter or full name, e.g. 'b'.")] = "b",
@@ -337,7 +339,7 @@ def sweep(
     console.print(f"[dim]Saved: {', '.join(str(p) for p in paths)}[/dim]")
 
 
-@app.command("list")
+@app.command("list", short_help="List multi-planet systems in the archive.")
 def list_cmd(
     min_planets: Annotated[int, typer.Option("--min-planets", help="Minimum number of planets.", min=2)] = 2,
     max_period_days: Annotated[
@@ -397,7 +399,7 @@ def list_cmd(
         console.print(f"[dim]… {len(systems) - limit} more; use --limit 0 to show all.[/dim]")
 
 
-@catalog_app.command("build")
+@catalog_app.command("build", short_help="Compute the catalog of multi-planet systems.")
 def catalog_build(
     limit: Annotated[
         int, typer.Option("--limit", help="Process at most this many systems (0: all).", min=0)
