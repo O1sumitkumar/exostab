@@ -389,8 +389,8 @@ and no BibTeX entry; it is cited in the text with a link to its code repository.
 
 - HD 127195: `pl_orblper` = 3.10 and 4.12 "deg". These are the radian values of Figueira et al. (2026,
   Table 2), whose degree label is a typo (noted in the Research Note). Phases are not published in the
-  archive, so they are randomized anyway; ω enters only through the apsidal orientation. Worth reporting to
-  the archive (account-side action for Mehmet).
+  archive, so they are randomized anyway; ω enters only through the apsidal orientation. Reported to the
+  archive's helpdesk on 2026-10-16, together with the GJ 876 entry below.
 - GJ 876: `pl_orbtper` is the osculating epoch for all four planets (D9).
 - `pl_bmassprov` takes the value "M-R relationship", which is not in the archive's column documentation.
 

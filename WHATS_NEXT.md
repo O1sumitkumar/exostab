@@ -63,7 +63,8 @@ and the DECISIONS.md entry behind it. Smaller items were merged into them or add
 
 ## Account-side actions for Mehmet (not issues)
 
-- Report to the NASA Exoplanet Archive that HD 127195 b and c list `pl_orblper` = 3.10 and 4.12 "deg". These
-  are the radian values of Figueira et al. (2026), Table 2 (D18).
+- Done 2026-10-16: helpdesk tickets to the NASA Exoplanet Archive about HD 127195 b and c (`pl_orblper` = 3.10 and
+  4.12 "deg" are radian values) and GJ 876 (`pl_orbtper` is the osculating epoch for all four planets) (D18).
+  Update D18 when the archive replies.
 - PyPI trusted publishing, the Zenodo software DOI, Streamlit Community Cloud and the catalog's Zenodo dataset:
   see RELEASING.md. GitHub Pages and private vulnerability reporting are already set up.
