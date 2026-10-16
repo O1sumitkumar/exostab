@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import re
 import time
 from pathlib import Path
 
@@ -157,6 +158,11 @@ def test_sweep_figure_shows_infinite_and_zero_beta(tmp_path: Path, monkeypatch: 
 # ------------------------------------------------------------------------------------------ CLI
 
 
+def plain(output: str) -> str:
+    """CLI output without ANSI styling (Typer forces colour when GITHUB_ACTIONS, FORCE_COLOR or PY_COLORS is set)."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", output)
+
+
 def test_version_and_help() -> None:
     r = runner.invoke(app, ["--version"])
     assert r.exit_code == 0 and __version__ in r.output
@@ -164,7 +170,7 @@ def test_version_and_help() -> None:
     assert r.exit_code == 0 and "check" in r.output and "catalog" in r.output
     # pip users have no streamlit_app.py: the help points to the packaged launcher, and to the install commands
     # for its extra (from GitHub: there is no exostab on PyPI)
-    help_text = " ".join(r.output.split())
+    help_text = " ".join(plain(r.output).split())
     assert (
         "python -m exostab.web (needs the [web] extra: https://mimitoz62.github.io/exostab/quickstart/)"
         in help_text
@@ -271,7 +277,7 @@ def test_negative_seed_is_rejected(command: list[str], tmp_path: Path) -> None:
     # recording every catalog system as an error
     r = runner.invoke(app, [*command, "--seed", "-1", "--out", str(tmp_path)])
     assert r.exit_code == 2, r.output
-    assert "--seed" in r.output and not list(tmp_path.iterdir())
+    assert "--seed" in plain(r.output) and not list(tmp_path.iterdir())
 
 
 def test_list_command() -> None:

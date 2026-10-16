@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 
 import pytest
 
 from exostab.models import DataSource, MassKind, Phase, PhaseKind, Planet, Provenance, Star, System, Value
+
+# Tests compare plain text output. Rich styles its output when FORCE_COLOR or PY_COLORS is set and reads them
+# when a console is created, so they are cleared at import time (exostab.models creates no console). Typer also
+# forces styling under GITHUB_ACTIONS; the CLI tests strip that with test_report_cli.plain.
+for _variable in ("FORCE_COLOR", "PY_COLORS"):
+    os.environ.pop(_variable, None)
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 VALIDATION = Path(__file__).resolve().parent / "validation" / "systems"
