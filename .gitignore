@@ -41,3 +41,5 @@ exostab-results/
 
 # Generated during the docs build
 docs/data/
+# copied from src/exostab/schemas by the docs workflow
+docs/schemas/

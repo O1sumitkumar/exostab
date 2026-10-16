@@ -657,8 +657,7 @@ keys in the indicator details (for example `beta_coplanar`, `outside_domain` and
 value `star_approach`, and overall summaries built from the draw counts. *Uncertain:* the AMD values `beta`,
 `beta_star` and `beta_hill` now mean twice the coplanar value, and `total_amd_relative_to_lambda_1` was removed.
 These sit in the free-form `details`, so the JSON Schema itself does not change, but the module's own rule counts
-a renamed or removed field as a major change; whether this needs 2.0 is open (issue proposed: "Decide whether the
-AMD convention change needs report schema 2.0").
+a renamed or removed field as a major change; whether this needs 2.0 was decided in D33 (it stays 1.3).
 
 ## D30 — `exostab sweep --range` has no default except for e (2026-10-03)
 
@@ -686,3 +685,18 @@ within 5,000 orbits; and at 3.0 no phase is regular and at least 6 of 8 meet wit
 sets at 3.0, never more than 2 of 8 phases missed within 2e4 orbits, and the runs that missed stayed chaotic
 (⟨Y⟩ > 13). Notebook 02's "encounters stop between 3.30 and 3.35" used a different encounter distance (one mutual
 Hill radius), time step (P/50) and grid, and is no longer claimed as reproduced (docs/validation.md).
+
+## D33 — Release decisions for 1.0.0 (2026-10-16)
+
+- **Version and maturity.** The first public release is 1.0.0 (the owner's choice: it completes the three
+  milestones of the brief). The classifier is "Development Status :: 4 - Beta", not "5 - Production/Stable": no
+  one outside the project has used exostab yet, and the thresholds behind the verdicts have open calibration
+  issues. Within 1.x, the CLI options, the verdict vocabulary and the report fields are kept; a change that removes
+  or renames any of them needs 2.0.
+- **Report schema 1.3, not 2.0.** The AMD values in the indicator details changed meaning, and one key was removed,
+  between schemas 1.2 and 1.3 (D29). No schema before 1.3 was ever released, so no published report or consumer is
+  affected, and the public schema history starts at 1.3. From here on the rule in `report.py` applies as written.
+- **Schema `$id`.** The `$id` is https://mimitoz62.github.io/exostab/schemas/report-1.3.json. The docs workflow
+  copies the generated schema to that path, so the identifier resolves. Older `$id` values pointed at a GitHub URL
+  that did not exist.
+

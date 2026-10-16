@@ -28,6 +28,11 @@ jobs:
           else
             python scripts/catalog_page.py
           fi
+      - name: Publish the report JSON Schema at the URL of its $id (DECISIONS.md, D33)
+        run: |
+          mkdir -p docs/schemas
+          version=$(python -c "from exostab.report import SCHEMA_VERSION; print(SCHEMA_VERSION)")
+          cp src/exostab/schemas/report.schema.json "docs/schemas/report-$version.json"
       - name: Build the site (fonts downloaded at build time and served from the site)
         run: mkdocs build --strict
         env:

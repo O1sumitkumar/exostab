@@ -78,10 +78,7 @@ Web app, CLI, packaging:
 - `catalog build`: say when `catalog.parquet` is not written because pyarrow is missing
 - Make the SPOCK environment script available from the installed package, and pin the whole SPOCK environment
   with per-platform constraint files (D23)
-- Decide whether the AMD convention change needs report schema 2.0 (D29)
-- Give report.schema.json a resolvable `$id` or publish it on the docs site
 - Derive the sdist guard test's file list from the tests
-- Choose the PyPI Development Status classifier for 1.0.0
 
 ## Account-side actions for Mehmet (not issues)
 

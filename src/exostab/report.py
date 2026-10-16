@@ -424,7 +424,8 @@ def write_json(report: Report, path: Path) -> Path:
 
 def json_schema() -> dict[str, Any]:
     schema = Report.model_json_schema()
-    schema["$id"] = f"https://github.com/mimitoz62/exostab/schemas/report-{SCHEMA_VERSION}.json"
+    # Published on the documentation site by .github/workflows/docs.yml, so the identifier resolves (D33).
+    schema["$id"] = f"https://mimitoz62.github.io/exostab/schemas/report-{SCHEMA_VERSION}.json"
     schema["title"] = f"exostab report (schema {SCHEMA_VERSION})"
     return schema
 

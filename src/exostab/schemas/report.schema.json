@@ -977,5 +977,5 @@
   ],
   "title": "exostab report (schema 1.3)",
   "type": "object",
-  "$id": "https://github.com/mimitoz62/exostab/schemas/report-1.3.json"
+  "$id": "https://mimitoz62.github.io/exostab/schemas/report-1.3.json"
 }
