@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `exostab sweep --param e` refuses eccentricities above `E_MAX` (0.95), as `exostab check` does, instead of
+  integrating orbits up to e < 1.
+
 ## [1.0.0] - 2026-10-16
 
 First public release.
