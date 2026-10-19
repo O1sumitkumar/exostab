@@ -23,7 +23,7 @@ from .integrate import RunConfig
 from .models import System
 from .plots import sweep_figure
 from .report import software_record
-from .sampling import Realization, realizations
+from .sampling import E_MAX, Realization, realizations
 from .units import days_to_years, mearth_to_msun
 
 PARAM_LABELS = {
@@ -45,8 +45,10 @@ def check_value(param: str, value: float) -> None:
         raise ValueError(f"unknown sweep parameter {param!r}")
     if not math.isfinite(value):
         raise ValueError(f"{PARAM_LABELS[param]} must be a finite number, got {value}")
-    if param == "e" and not 0 <= value < 1:
-        raise ValueError(f"eccentricity must be in [0, 1), got {value}")
+    if param == "e" and not 0 <= value <= E_MAX:
+        raise ValueError(
+            f"eccentricity must be in [0, {E_MAX:g}], got {value} ({E_MAX:g} is the largest exostab integrates)"
+        )
     if param in ("mass", "period") and value <= 0:
         raise ValueError(f"{param} must be positive, got {value}")
 
